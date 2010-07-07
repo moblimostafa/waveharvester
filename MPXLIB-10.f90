@@ -30,6 +30,7 @@
 
 ! NOTES:
 ! Modified by Jessica Sanders Summer, 2008
+! Modified by Curtis Lee, Summer 2010
 PROGRAM MPXLIB
 
         IMPLICIT NONE
@@ -50,11 +51,17 @@ PROGRAM MPXLIB
         integer :: rb_shape                                         ! Shape of the rigid body
                                                                     ! 1 = circle
                                                                     ! 2 = ellipse
+                                                                    ! 3 = square
+        integer :: int_type                                         ! Type of internal component(s)
+                                                                    ! 0 = none
+                                                                    ! 1 = torsional disc
+        integer :: aom_counter                                      ! For detecting RB internal instability
         !
         !
         ! LOGICAL AND CHARACTER
         logical :: startup,trackphase,immersedbc                    ! booleans        
         logical :: rigidbody
+        logical :: wedge                                            ! Wedge
         logical :: inside
         character(20) :: filename,variables,startfile               ! strings
         !
@@ -63,8 +70,8 @@ PROGRAM MPXLIB
         real(kind=8) :: pi                                          ! pi
         real(kind=8) :: Lx,Ly                                       ! domain size
         real(kind=8) :: umax,vmax,dtvisc,dtadv,&
-                        dtg,dtsigma                                 ! time step variables
-        real(kind=8) :: deltaT,deltaX,deltaY,deltaTau               ! increment
+                        dtg,dtsigma,dtinternal                      ! time step variables
+        real(kind=8) :: deltaT,deltaX,deltaY,deltaTau               ! incremenit
         real(kind=8) :: time,time_max, &
                         time_print,time_count                       ! time variables
         real(kind=8) :: stability
@@ -109,7 +116,9 @@ PROGRAM MPXLIB
         ! Rigid Body Variables
         real(kind=8) :: a_rbLS, b_rbLS, c_rbLS, d_rbLS              ! Rigid body geometry
         
-        real(kind=8) :: rb_mass,big_J                               ! Rigid body mass
+        real(kind=8) :: rb1_mass,big_J                              ! Rigid body mass
+        real(kind=8) :: rb_mass                                     ! TOTAL mass (RB + Internals)
+        
         real(kind=8) :: n_rb_dx,n_rb_dy                             ! Rigid body displacement        
         real(kind=8) :: n1_rb_dx,n1_rb_dy
         real(kind=8) :: rx,ry
@@ -127,16 +136,31 @@ PROGRAM MPXLIB
         real(kind=8) :: n_rb_ax,n_rb_ay                             ! Rigid body acceleration        
         real(kind=8) :: n1_rb_ax,n1_rb_ay
 
-        real(kind=8) :: big_theta        
+        real(kind=8) :: big_theta       
+        real(kind=8) :: th_change,th_domain,th_old,th_counter       ! Change in RB's angle (from original value)
         real(kind=8) :: n_rb_vom,n12_rb_vom                         ! Rotational velocities
         real(kind=8) :: n1_rb_vom
         real(kind=8) :: n_rb_aom,n1_rb_aom                          ! Rotational acceleration
         real(kind=8) :: xc,yc                                       ! Center of mass
         real(kind=8) :: u_12,v_12                                   ! Intermediate variables for setting
                                                                     ! fluid velocity to RB velocity
+
+        ! Torsional Disc Variables               
+        real(kind=8) :: small_theta_n, small_theta_n1        
+        real(kind=8) :: n_rb2_vom,n12_rb2_vom                       ! Rotational velocities
+        real(kind=8) :: n1_rb2_vom
+        real(kind=8) :: n_rb2_aom,n1_rb2_aom                        ! Rotational acceleration
         
-        
-        
+        real(kind=8) :: delta_theta                                 ! Angle difference between disc and RB
+        real(kind=8) :: delta_vom                                   ! Angular velocity difference
+        real(kind=8) :: int_torque                                  ! Internal torque 
+
+        real(kind=8) :: rb2_mass,small_J                            ! Mass/moment of disc
+        real(kind=8) :: k12                                         ! Torsional spring constant
+        real(kind=8) :: c12                                         ! Torsional damping constant
+        real(kind=8) :: aom_limit                                   ! Used in detection of instability
+       
+
         ! Integral terms for the RHS of rigid body equations
         real(kind=8) :: n_xint_conv, n_xint_grav, n_xint_inert      ! For the first step the convective and gravity terms
                                                                     ! For the correction step, the inertial terms
@@ -208,8 +232,11 @@ PROGRAM MPXLIB
         real(kind=8), ALLOCATABLE :: nx_v(:),ny_v(:)
         real(kind=8), ALLOCATABLE :: pt(:),rot_mat(:,:),t(:,:)
         !
+        ! For the internals
+        real(kind=8), ALLOCATABLE :: int_data(:)                    ! Internal data - used for graphic
         !
-        ! EXTERANL FUNCTION DECLARATION
+        !
+        ! EXTERNAL FUNCTION DECLARATION
         REAL(kind=8), EXTERNAL :: LSHEAVY
         REAL(kind=8), EXTERNAL :: LSCURVATURE
         REAL(kind=8), EXTERNAL :: EXPINT, ERF
@@ -272,6 +299,7 @@ PROGRAM MPXLIB
         READ (UNIT=2,FMT=80) trackphase                              ! track the interface
         READ (UNIT=2,FMT=80) immersedbc                              ! use immersedbc
         READ (UNIT=2,FMT=80) rigidbody                               ! add rigid body
+        READ (UNIT=2,FMT=80) wedge                                   ! use wedge
         !
         !
         READ (UNIT=2,FMT=50) variables                               ! skip blank line
@@ -285,7 +313,10 @@ PROGRAM MPXLIB
         READ (UNIT=2,FMT=60) rb_shape                                ! shape of the rigid body
                                                                      ! 1 = circle
                                                                      ! 2 = ellipse
-        READ (UNIT=2,FMT=70) rb_mass                                 ! mass of the rigid body
+        READ (UNIT=2,FMT=60) int_type                                ! type of internal component(s)
+                                                                     ! 0 = none
+                                                                     ! 1 = disc
+        READ (UNIT=2,FMT=70) rb1_mass                                ! mass of the rigid body
         READ (UNIT=2,FMT=70) big_J                                   ! rotational moment of inertia of the rigid body
         READ (UNIT=2,FMT=70) rho_one                                 ! density of first fluid, H=1, phiLS>0        (liquid)
         READ (UNIT=2,FMT=70) rho_two                                 ! density of second fluid, H=0, phiLS<0        (vapor)
@@ -394,7 +425,7 @@ PROGRAM MPXLIB
         READ (UNIT=2,FMT=50) variables  ! skip blank line
         READ (UNIT=2,FMT=50) variables  ! skip blank line
         !
-        !** INITIAL CONDITIONS FOR ELLIPTICAL RIGID BODY**        
+        !** INITIAL CONDITIONS FOR SQUARE RIGID BODY**        
         ! s_phiLS = 
         READ (UNIT=2,FMT=50) variables  
         READ (UNIT=2,FMT=50) variables 
@@ -411,6 +442,16 @@ PROGRAM MPXLIB
         READ (UNIT=2,FMT=70) c_tho
         READ (UNIT=2,FMT=70) cgx
         READ (UNIT=2,FMT=70) cgy
+        !        
+        READ (UNIT=2,FMT=50) variables  ! skip blank line
+        READ (UNIT=2,FMT=50) variables  ! skip blank line
+        !
+        !** TORSIONAL DISC PARAMETERS (int_type = 1) ***        
+        READ (UNIT=2,FMT=50) variables   
+        READ (UNIT=2,FMT=70) rb2_mass                                ! mass of the torsional disc
+        READ (UNIT=2,FMT=70) small_J                                 ! rotational moment of inertia of the disc
+        READ (UNIT=2,FMT=70) k12                                     ! torsional spring constant
+        READ (UNIT=2,FMT=70) c12                                     ! torsional damping constant
         !
         READ (UNIT=2,FMT=50) variables  ! skip blank line
         !
@@ -474,7 +515,10 @@ PROGRAM MPXLIB
         AllOCATE (BDA(Ny))
         AllOCATE (BDB(Ny))   
         AllOCATE (BDC(Nx))
-        AllOCATE (BDD(Nx))         
+        AllOCATE (BDD(Nx))
+        !
+        ! Internal Data
+        ALLOCATE (int_data(Nx+1))
         !
         !
         ! time and counter initialization
@@ -546,6 +590,50 @@ PROGRAM MPXLIB
         n_rb_aom = 0.0
         n1_rb_aom = 0.0
 
+        th_change = 0.0
+        th_domain = 0.0
+        th_old = 0.0
+        th_counter = 0.0
+
+           ! Internal Parameters
+ 
+           int_data = 0.0                                                ! Internal data
+           int_data(1) = int_type
+
+           ! System Mass & Internal Time Step Requirement (Estimate)
+           
+           dtinternal = 10.0
+
+           if (int_type == 0) then
+             
+             rb_mass = rb1_mass
+
+           elseif (int_type == 1) then
+             
+             rb_mass = rb1_mass + rb2_mass
+             
+             if ((k12 /= 0.0) .and. (c12 /= 0.0)) then
+             dtinternal = min( sqrt(min(big_J,small_J)/k12), sqrt(min(big_J,small_J)/c12) )
+             endif
+
+             aom_counter = 0
+             aom_limit = 10
+           end if
+
+           ! Torsional Disc
+           small_theta_n = 0.0
+           small_theta_n1 = 0.0
+ 
+           n_rb2_vom = 0.0
+           n12_rb2_vom = 0.0
+           n1_rb2_vom = 0.0
+        
+           n_rb2_aom = 0.0
+           n1_rb2_aom = 0.0
+           delta_theta = 0.0
+           delta_vom = 0.0
+           int_torque = 0.0
+
         ! Initialize intergral variables two different directions
         n_xint_conv  = 0.0
         n_xint_grav  = 0.0
@@ -588,7 +676,7 @@ PROGRAM MPXLIB
         BCphiwest = 1        ! 1
         BCphieast = 1        ! 1
 
-        ! ////////////////////// CORDINATE GENERATION \\\\\\\\\\\\\\\\\\\\\\
+        ! ////////////////////// COORDINATE GENERATION \\\\\\\\\\\\\\\\\\\\\\
         deltaX = Lx/(real(Nx))
         deltaY = Ly/(real(Ny))
         x(1) = 0.0
@@ -625,7 +713,7 @@ PROGRAM MPXLIB
         s_phiLS = 0.0                                                ! Rigid Body
         phiLS = 0.0                                                  ! Free surface
         phi = 0.0                                                    ! Immersed Boundary
-       
+ 
          
         if (immersedbc .EQV. .TRUE.) then
           do i=1,Nx+2
@@ -661,24 +749,28 @@ PROGRAM MPXLIB
         endif
 
         ! The wedge
-        do i=1,Nx+2
-          do j=1,Ny+2        
+        if (wedge .EQV. .TRUE.) then
+          do i=1,Nx+2
+            do j=1,Ny+2        
         
-            if (xwhole(i) < 0.1) then
-                w_phiLS(i,j) = -(-ywhole(j) + 0.65)
-            else
-                w_phiLS(i,j) = -(-ywhole(j) + xwhole(i) + 0.55)
-            endif
+              if (xwhole(i) < 0.1) then
+                  w_phiLS(i,j) = -(-ywhole(j) + 0.65)
+              else
+                  w_phiLS(i,j) = -(-ywhole(j) + xwhole(i) + 0.55)
+              endif
                         
+            enddo
           enddo
-        enddo
-        
+        endif
+
         ! The Rigid Body
         ! Circle
         if ((rigidbody .EQV. .TRUE.) .AND. (rb_shape == 1)) then
           do i=1,Nx+2
             do j=1,Ny+2
-                        
+              
+              th = 0.0
+              th_old = th
               xc = b_rbLS
               yc = c_rbLS
 
@@ -697,6 +789,7 @@ PROGRAM MPXLIB
           xc = xn
           yc = yn
           th = pi/tho
+          th_old = th
           print*, "tho"
           print*, tho
           print*, "th"
@@ -722,6 +815,8 @@ PROGRAM MPXLIB
           yc = c_yo
                 
           !th = pi/c_tho
+          th = c_tho
+          th_old = th
           cost = cos(c_tho)
           sint = sin(c_tho)
           rot_mat(1,1) = cost
@@ -881,7 +976,8 @@ PROGRAM MPXLIB
             enddo
           enddo
         endif
-        
+                                                     
+
         ! initialize the new LS field to a signed distance function
         CALL LSREIN(Nx,Ny,deltaX,deltaY,phiLS,H,&
                     BCphisouth,BCphinorth,BCphiwest,BCphieast,ywhole,d_phiLS)
@@ -916,22 +1012,23 @@ PROGRAM MPXLIB
         endif        
 
         ! The wedge
-        do i=1,Nx+2
-          do j=1,Ny+2
-            ! Heavieside function
-            w_H(i,j) = LSHEAVY(Nx,Ny,i,j,deltaX,deltaY,w_phiLS)
-            !s_H(i,j) = 0.0
+        if (wedge .EQV. .TRUE.) then
+          do i=1,Nx+2
+            do j=1,Ny+2
+              ! Heavieside function
+              w_H(i,j) = LSHEAVY(Nx,Ny,i,j,deltaX,deltaY,w_phiLS)
+              !s_H(i,j) = 0.0
+            enddo
           enddo
-        enddo
-
+        endif
         
         ! ---- FLUID VELOCITY ----
         u = 0.0                
         v = 0.0
         u_old = 0.0
         v_old = 0.0
-        deltaT = 1.0/( max(mu_one/rho_one,mu_two/rho_two)*&
-                          (2.0/(deltaX**2.0) + 2.0/(deltaY**2.0)) )
+        deltaT = min(1.0/( max(mu_one/rho_one,mu_two/rho_two)*&
+                         (2.0/(deltaX**2.0) + 2.0/(deltaY**2.0)) ),dtinternal)
 
         ! --- INITIAL SET OF RIGID BODY FORCES
 
@@ -1032,17 +1129,31 @@ PROGRAM MPXLIB
               endif
             enddo
           enddo
-                
-                
+
+          ! Initial internal forces
+          
+          if (int_type == 1) then                               ! Torque exerted between disc and RB
+              
+              small_theta_n = th
+              delta_theta = small_theta_n - th
+              delta_vom = n_rb2_vom - n_rb_vom
+              int_torque = k12*delta_theta + c12*delta_vom 
+              int_data(2) = cgx                                 ! Save data for post-processing
+              int_data(3) = cgy
+              int_data(4) = small_theta_n
+
+          endif
+      
           ! First set of rigid body accelerations
           n_rb_ax = (n_xint_inert + n_xint_conv + n_xint_grav)/rb_mass - gx        
           n_rb_ay = (n_yint_inert + n_yint_conv + n_yint_grav)/rb_mass - gy        
-          n_rb_aom = (r_int_inert + r_int_conv + r_int_grav)/big_J
-       
+          n_rb_aom = (r_int_inert + r_int_conv + r_int_grav + int_torque)/big_J
+          n_rb2_aom = -int_torque/small_J
+
         endif
 
         ! ---- SAVE INITIAL DATA ----
-        call SAVEDATA(Nx,Ny,Lx,Ly,time,x,y,phiLS,s_phiLS,w_phiLS,H,s_H,w_H,P,u,v,file_count)
+        call SAVEDATA(Nx,Ny,Lx,Ly,time,x,y,phiLS,s_phiLS,w_phiLS,H,s_H,w_H,P,u,v,file_count,int_data)
         
         ! //////////////////////// SOLVING EQUATIONS \\\\\\\\\\\\\\\\\\\\\\\
         do  ! time loop
@@ -1054,8 +1165,8 @@ PROGRAM MPXLIB
           CLOSE (UNIT=8)
                 
           OPEN (UNIT=7,FILE='rotations.dat', POSITION ='append', IOSTAT=ios)
-          WRITE (UNIT=7,FMT=90) th, n_rb_vom, n_rb_aom,&
-                                r_int_grav, r_int_conv, r_int_inert
+          WRITE (UNIT=7,FMT=90) th, small_theta_n, deltaT, n_rb_vom, n_rb_aom,&
+                                int_torque, r_int_grav, r_int_conv, r_int_inert
           CLOSE (UNIT=7)
         
                 
@@ -1082,9 +1193,10 @@ PROGRAM MPXLIB
           dtg=sqrt( min(deltaX,deltaY)/max(gx,gy,1.0e-16) )
           dtsigma=sqrt( min(rho_one,rho_two)*min(deltaX,deltaY)**3.0/&
                         (4.0*pi*sigma+1.0e-16) )
-          deltaT=min(dtvisc,dtadv,dtg,dtsigma)
+          deltaT=min(dtvisc,dtadv,dtg,dtsigma,dtinternal)
           deltaT=stability*deltaT  ! stability must be less than 0.9
           deltaT = min(deltaT,time_print)
+
 !          print *, " "
 !          print *,  "time =", time, " deltaT =", deltaT
 !          print *, " "
@@ -1126,6 +1238,11 @@ PROGRAM MPXLIB
             ! Rotational velocity at (n+1/2)
             n12_rb_vom = n_rb_vom + 0.5*deltaT/big_J*&
                                        (r_int_inert + r_int_conv + r_int_grav)
+
+            ! Internal rotational velocity at (n+1/2)
+            if (int_type == 1) then
+              n12_rb2_vom = n_rb2_vom + 0.5*deltaT*n_rb2_aom
+            endif
 
             ! Calculate the rigid body velocity at v(n+1/2)
             n12_rb_vx = n_rb_vx + 0.5*deltaT*n_rb_ax
@@ -1185,32 +1302,33 @@ PROGRAM MPXLIB
             enddo
           enddo
 
-          do i=1,Nx+1
-            do j=1,Ny+1
+          if (wedge .EQV. .TRUE.) then
+            do i=1,Nx+1
+              do j=1,Ny+1
                                                 
-              if ( 0.5*(w_phiLS(i+1,j) + w_phiLS(i,j)) >= 0) then
+                if ( 0.5*(w_phiLS(i+1,j) + w_phiLS(i,j)) >= 0) then
 
-              ! new velocity, n+1/2 time level
-              u(i,j) = 0.0
+                ! new velocity, n+1/2 time level
+                u(i,j) = 0.0
 
-              endif
+                endif
+              enddo
             enddo
-          enddo
+ 
 
-
-          do i=1,Nx+2
-            do j=1,Ny+1
+            do i=1,Nx+2
+              do j=1,Ny+1
                                 
-              if ( 0.5*(w_phiLS(i,j) + w_phiLS(i,j+1)) >= 0) then
+                if ( 0.5*(w_phiLS(i,j) + w_phiLS(i,j+1)) >= 0) then
 
-              ! new velocity, n+1/2 time level
-              v(i,j) = n1_w_vy
+                ! new velocity, n+1/2 time level
+                v(i,j) = n1_w_vy
 
 
-              endif
+                endif
+              enddo
             enddo
-          enddo
-
+          endif
 
                 
           ! ---- CONVECTIVE TERMS WITH NO UPWINDING ---- !
@@ -1778,8 +1896,8 @@ PROGRAM MPXLIB
                   as = 1.0/(rho_s*deltaY**2.0) !1.0/deltaX**2.0
                   aO = -aw-ae-an-as                         !-4.0/deltaX**2.0
 
-                  PRes = PPERHS(i,j)-ae*P(i+2,j+1)-aw*P(i,j+1) + &
-                        -an*P(i+1,j+2)-as*P(i+1,j)-ao*P(i+1,j+1)
+                  PRes = PPERHS(i,j)-ae*P(i+2,j+1)-aw*P(i,j+1) - &
+                         an*P(i+1,j+2)-as*P(i+1,j)-ao*P(i+1,j+1)
                   P(i+1,j+1) = P(i+1,j+1) + omega/aO*PRes
                                                 
                   maxPRes = max(abs(PRes),maxPRes)  ! largest error
@@ -1890,8 +2008,8 @@ PROGRAM MPXLIB
 
                   !  JDS 7/16/2008 Took umflux and vmflux out of equation                                                
                   ! phiLSstar is a dummy variable for advection
-                  phiLSstar(i,j) = -( 0.5*(u(i,j)+u(i-1,j)))*DiffX + &
-                                   -( 0.5*(v(i,j)+v(i,j-1)))*DiffY                        
+                  phiLSstar(i,j) = -( 0.5*(u(i,j)+u(i-1,j)))*DiffX - &
+                                    ( 0.5*(v(i,j)+v(i,j-1)))*DiffY                        
 
                 ENDDO
               ENDDO
@@ -1936,37 +2054,58 @@ PROGRAM MPXLIB
 
                 
           ! /////////// RIGID BODY DYNAMICS - UPDATED VELOCITY \\\\\\\\\\\\\\\
+          
+          if (wedge .EQV. .TRUE.) then      
+            
+            n12_w_vy = -2*pi*0.2*sin(2*pi*(time + 0.5*deltaT))
                 
-          n12_w_vy = -2*pi*0.2*sin(2*pi*(time + 0.5*deltaT))
+            ! Calculate d(n+1)
                 
-          ! Calculate d(n+1)
-                
-          !n1_rb_dx = n_rb_dx + deltaT*n12_rb_vx 
-          n1_w_dy = n_w_dy + deltaT*n12_w_vy
-
+            !n1_rb_dx = n_rb_dx + deltaT*n12_rb_vx 
+            n1_w_dy = n_w_dy + deltaT*n12_w_vy
                 
                 
-          do i=1,Nx+2
-            do j=1,Ny+2
+            do i=1,Nx+2
+              do j=1,Ny+2
                                 
-              if (xwhole(i) < 0.1) then
-                w_phiLS(i,j) = -(-ywhole(j) + 0.65 + n1_w_dy)
-              else
-                w_phiLS(i,j) = -(-ywhole(j) + xwhole(i) + 0.55 + n1_w_dy)
-              endif
+                if (xwhole(i) < 0.1) then
+                  w_phiLS(i,j) = -(-ywhole(j) + 0.65 + n1_w_dy)
+                else
+                  w_phiLS(i,j) = -(-ywhole(j) + xwhole(i) + 0.55 + n1_w_dy)
+                endif
                                 
                                                 
-            enddo
-          enddo        
-
+              enddo
+            enddo        
+          endif
 
           ! Reconstruct the level set
-          if (rigidbody .EQV. .TRUE.) then                
+          if (rigidbody .EQV. .TRUE.) then
+
+            ! Recover change in rigid body's angle
+
+            if (n1_rbdelom(1,1) < 0) then                 ! Expand domain of asin to +/-pi
+
+                 th_domain = sign(pi,n1_rbdelom(2,1)) - asin(n1_rbdelom(2,1))
+            else    
+                 th_domain = asin(n1_rbdelom(2,1))            
+            endif
+            
+            if ((abs(th_old) > pi/2.0) .and. &            ! Track number of revolutions 
+               (sign(dble(1),th_old) /= sign(dble(1),th_domain))) then
+                 
+                 th_counter = th_counter + sign(dble(1),th_old)            
+            endif
+
+            th_change = th_domain + 2.0*pi*th_counter
+            th_old = th_domain
+
             if (rb_shape == 1) then                                
               do i=1,Nx+2
                 do j=1,Ny+2
-
-        
+  
+                  th = 0.0 + th_change 
+  
                   xc = b_rbLS + n1_rb_dx
                   yc = c_rbLS + n1_rb_dy
                                                 
@@ -1986,7 +2125,8 @@ PROGRAM MPXLIB
                   yn = yo + n1_rb_dy
                   xc = xn
                   yc = yn
-                  th = pi/tho + asin(n1_rbdelom(2,1))
+                 
+                  th = pi/tho + th_change
                                                         
                   s_phiLS(i,j) = -100*&
                                  (bellipse**2*(xwhole(i)*cos(th) + ywhole(j)*sin(th) - &
@@ -2013,7 +2153,8 @@ PROGRAM MPXLIB
               ncgx = cgx + n1_rb_dx
               ncgy = cgy + n1_rb_dy
                                 
-              th = c_tho + asin(n1_rbdelom(2,1))
+              th = c_tho + th_change
+
               cost = cos(th)
               sint = sin(th)
               rot_mat(1,1) = cost
@@ -2148,7 +2289,7 @@ PROGRAM MPXLIB
                 enddo
               enddo
             endif
-                
+   
                                         
             ! ---- NEW HEAVIESIDE FCN ----
             ! finding the new heavieside function at each node
@@ -2160,12 +2301,13 @@ PROGRAM MPXLIB
                         
             ! ---- NEW HEAVIESIDE FCN ----
             ! finding the new heavieside function at each node
-            do i=1,Nx+2
-              do j=1,Ny+2
-                w_H(i,j) = LSHEAVY(Nx,Ny,i,j,deltaX,deltaY,w_phiLS)
+            if (wedge .EQV. .TRUE.) then
+              do i=1,Nx+2
+                do j=1,Ny+2
+                  w_H(i,j) = LSHEAVY(Nx,Ny,i,j,deltaX,deltaY,w_phiLS)
+                enddo
               enddo
-            enddo
-
+            endif
                 
             ! Recalculate the forces with the new displacement
       
@@ -2337,18 +2479,38 @@ PROGRAM MPXLIB
                                  + 0.5*deltaT/big_J*&
                                    (r1_int_inert + r1_int_conv + r1_int_grav)
                 
+            ! Update internal rotational elements
+            if (int_type == 1) then
+              
+              small_theta_n1 = small_theta_n + deltaT*n12_rb2_vom 
+              delta_theta = small_theta_n1 - th
+              delta_vom = n12_rb2_vom - n12_rb_vom  
+              int_torque = k12*delta_theta + c12*delta_vom 
+              int_data(2) = ncgx                                 ! Save data for post-processing
+              int_data(3) = ncgy
+              int_data(4) = small_theta_n
+
+            endif
+
             ! Compute updated acceleration
                 
             n1_rb_ax = (n1_xint_inert + n1_xint_conv + n1_xint_grav - gx*rb_mass)/rb_mass
             n1_rb_ay = (n1_yint_inert + n1_yint_conv + n1_yint_grav - gy*rb_mass)/rb_mass
                 
-            n1_rb_aom = 2/deltaT*(n1_rb_vom - n_rb_vom) - n_rb_aom
+            n1_rb_aom = 2/deltaT*(n1_rb_vom - n_rb_vom) - n_rb_aom + (int_torque/big_J)
+            n1_rb2_aom = -int_torque/small_J
                                 
             ! Calculate final velocity
                 
             n1_rb_vx = n12_rb_vx + 0.5*deltaT*n1_rb_ax                
             n1_rb_vy = n12_rb_vy + 0.5*deltaT*n1_rb_ay
-            n1_w_vy = -2*pi*0.2*sin(2*pi*time)                        
+            n1_rb2_vom = n12_rb2_vom + 0.5*deltaT*n1_rb2_aom
+            
+            ! Wedge
+            if (wedge .EQV. .TRUE.) then
+              n1_w_vy = -2*pi*0.2*sin(2*pi*time)      
+            endif
+
           endif
                 
                 
@@ -2361,8 +2523,28 @@ PROGRAM MPXLIB
           !        enddo
           !enddo
 
+
+
+          ! CHECK FOR INSTABILITY due to internal body parameters (like very large k or c) by detecting
+          ! large, rapid oscillations in the acceleration of the buoy.
+          if (int_type == 1) then
+             
+             if (abs(n_rb_aom - n1_rb_aom) > aom_limit) then
+                aom_counter = aom_counter + 1
+             else 
+                aom_counter = 0
+             endif
+             
+             if (aom_counter > 15) then
+                stability  = 0.7*stability
+                aom_limit = aom_limit + 10.0
+                aom_counter = 0
+             endif
+
+          endif
+
           !---- INCREMENT THE TIME ----
-                
+          
           ! n+1 -> n
                 
           n_xint_conv  = n1_xint_conv
@@ -2409,11 +2591,15 @@ PROGRAM MPXLIB
                 
           n_rb_vom = n1_rb_vom
           n_rb_aom = n1_rb_aom
-                
+
+          n_rb2_vom = n1_rb2_vom
+          n_rb2_aom = n1_rb2_aom
+
+          small_theta_n = small_theta_n1
+               
           time = time + deltaT  ! increment the time to n+1
           time_count = time_count + deltaT  ! increment the print clock
                 
-
 
           !---- SAVING DATA ----
           !if (time>=time_max .or. time_count>=time_print) then
@@ -2435,7 +2621,7 @@ PROGRAM MPXLIB
             CALL BCLEVELSET(Nx,Ny,deltaX,deltay,ywhole,s_phiLS,&
                             BCphisouth,BCphinorth,BCphiwest,BCphieast,d_phiLS)
                                                         
-            call SAVEDATA(Nx,Ny,Lx,Ly,time,x,y,phiLS,s_phiLS,w_phiLS,H,s_H,w_H,P,u,v,file_count)
+            call SAVEDATA(Nx,Ny,Lx,Ly,time,x,y,phiLS,s_phiLS,w_phiLS,H,s_H,w_H,P,u,v,file_count,int_data)
 
           endif        ! end of data saving
                 

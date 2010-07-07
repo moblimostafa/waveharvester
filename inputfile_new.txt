@@ -1,0 +1,132 @@
+This is a data file, do not change format
+!** GEOMETRY **
+           Nx =        150
+           Ny =        30
+           Lx =        5.0
+           Ly =        1.0
+!
+!
+!** SOLVERS **
+   solvertype =          2
+      itermax =      50000
+    tolerance = 0.1000E-15
+    iterprint =       1500
+      precond =          1
+        omega = 0.1000E+01
+!
+!
+!** TIME **
+   time_print = 0.05
+     time_max = 10.0
+    stability = 0.2
+!
+!
+!** INTERFACE **
+   trackphase = T
+   immersedbc = F
+   rigidbody  = T
+        wedge = T                                                                                            
+!
+!
+!** PROPERTIES ** 
+! material_one => phi>0 and H=1
+! material_two => phi<0 and H=0
+     rb_shape = 3
+     int_type = 1
+      rb1_mass = 10.0
+        big_J = 0.0417
+      rho_one = 1000.0
+      rho_two = 1.0
+       mu_one = 0.001
+       mu_two = 0.00002
+        sigma = 0.0
+           gx = 0.0000E+00
+           gy = 9.81
+!
+!
+!** BOUNDARY TYPES **
+! velocity BC types - (1) diriclet wall, (2) neumman wall (also symmetry),
+		      (3) free surface, (4) pressure, (5) flow, (6) contact line
+      BCnorth =          1
+      BCsouth =          1
+       BCeast =          2
+       BCwest =          2
+!
+!** BOUNDARY CONDITIONS **
+! velocity boundary conditions [applicable for BC types (1) and (4)]
+       unorth = 0.0
+       usouth = 0.0000E+00
+        ueast = 0.0000E+00
+        uwest = 0.0000E+00
+!
+      vnorth  = 0.0000E+00
+       vsouth = 0.0000E+00
+        veast = 0.0000E+00
+        vwest = 0.0000E+00
+!
+! pressure dirclet BCs
+       Pnorth = 0.0000E+00
+       Psouth = 0.0000E+00
+        Peast = 0.0000E+00
+        Pwest = 0.0000E+00
+!
+! contact line boundary conditions
+! Ucl = contC*(angle - contA)**contM	if angle(phi) > contA
+! Ucl = -contC*(contR - angle)**contM	if angle(phi) < contR
+        contC = 0.0000E+00
+        contA = 0.0000E+00
+        contR = 0.0000E+00
+        contM = 0.0000E+00
+!
+!
+!** INITIAL CONDITIONS FOR FREE SURFACE **
+! phiLS = a*sqrt( (x-b)^2 +(y-c)^2 ) + d + ex + fy
+      a_phiLS = 0.0
+      b_phiLS = 0.0
+      c_phiLS = 0.0
+      d_phiLS = -0.2
+      e_phiLS = 0.0
+      f_phiLS = 0.0
+      v_phiLS = 0.5
+!
+!
+!** RIGID BODY CIRCLE PARAMETERS **
+! s_phiLS = a*sqrt( (x-b)^2 +(y-c)^2 ) + d
+       a_rbLS = -1.0
+       b_rbLS = 0.5
+       c_rbLS = 0.6
+       d_rbLS = 0.2
+!
+!
+!** RIGID BODY ELLIPSE PARAMETERS **
+! s_phiLS = 
+     aellipse = 0.2
+     bellipse = 0.1
+           xo = 0.5
+           yo = 0.4
+          tho = 12.0
+!
+!
+!** RIGID BODY SQUARE PARAMETERS **
+! s_phiLS =
+         c_xo = 2.5
+         c_yo = 0.45 
+           x1 = 2.55
+           y1 = 0.55
+           x2 = 2.45
+           y2 = 0.55
+           x3 = 2.45
+           y3 = 0.35
+           x4 = 2.55
+           y4 = 0.35
+          tho = 0.0
+          cgx = 2.5
+          cgy = 0.45
+!
+!
+!** TORSIONAL DISC PARAMETERS (int_type = 1) **^M
+     rb2_mass = 5.0 
+      small_J = 0.0250
+          k12 = 1.0
+          c12 = 1.0
+!

@@ -1,3 +1,4 @@
+
 % Script to make movie of velocity contours and level set evolution.
 
 clear
@@ -12,17 +13,19 @@ aviobjy = avifile('ycontours_pluslevelset2.avi')
 %aviobjp = avifile('intermediate.avi') 
 %aviobjpress = avifile('press.avi') 
 
+cirx = [-.05:.001:.05];
+ciry = sqrt(.0025-cirx.^2);
 
 xnodes = 151;
 ynodes = 31;
 
 totalpts = xnodes*ynodes;
 
-filenum = -2
+filenum = -1
 
-for j = 1:25
+for j = 1:11
     
-    filenum = filenum +2;
+    filenum = filenum +1;
     
     if filenum < 10
 
@@ -42,7 +45,7 @@ for j = 1:25
     line1 = fgetl(fid)
     line2 = fgetl(fid)
 
-    data = fscanf(fid,'%g',[11,totalpts]);
+    data = fscanf(fid,'%g',[12,totalpts]);
     
     X = data(1,:)';
     Y = data(2,:)';
@@ -52,6 +55,7 @@ for j = 1:25
     H = data(6,:)';
     S_H = data(7,:)';
     W_H = data(8,:)';
+    INT = data(12,:)';
     
     for i = 1:ynodes
         X_for_plot(i,:) = X(xnodes*(i-1)+1:xnodes*i);
@@ -136,9 +140,20 @@ for j = 1:25
     hold on
     contour(X_for_plot,Y_for_plot,S_PHI_for_plot,[0 0],'k')
     contour(X_for_plot,Y_for_plot,W_PHI_for_plot,[0 0],'k')
+    
+    if INT(1) == 1
+        cgx = INT(2);
+        cgy = INT(3);
+        th = INT(4);
+        rot_mat = [cos(th) -sin(th); ...
+                   sin(th) cos(th)];
+        internal = rot_mat*[0 .05]';
+        plot([cgx cgx+internal(1)], [cgy cgy+internal(2)], '-k', ...
+             cgx + cirx, cgy + ciry, 'r', cgx + cirx, cgy - ciry, 'r')
+    end
     axis equal
     axis([0 5 0 1])
-    
+    hy =    figure(1)
 %     diameter = 0.4;
 %     w = diameter;
 %     h = diameter;

@@ -22,7 +22,7 @@
 ! Modified by Jessica Sanders 16 juillet 2008 to remove temp data
 ! And again 15 Aout 2008 to remove volume variable "F", and add third
 ! phase
-SUBROUTINE SAVEDATA(Nx,Ny,Lx,Ly,time,x,y,phiLS,s_phiLS,w_phiLS,H,s_H,w_H,P,u,v,file_count)
+SUBROUTINE SAVEDATA(Nx,Ny,Lx,Ly,time,x,y,phiLS,s_phiLS,w_phiLS,H,s_H,w_H,P,u,v,file_count,int_data)
 
 	IMPLICIT NONE
 	
@@ -37,7 +37,7 @@ SUBROUTINE SAVEDATA(Nx,Ny,Lx,Ly,time,x,y,phiLS,s_phiLS,w_phiLS,H,s_H,w_H,P,u,v,f
 	REAL(kind=8), INTENT(IN) :: time
 
 	! real arrays
-	REAL(kind=8), DIMENSION(Nx+1), INTENT(IN) :: x
+	REAL(kind=8), DIMENSION(Nx+1), INTENT(IN) :: x, int_data
 	REAL(kind=8), DIMENSION(Ny+1), INTENT(IN) :: y
 	REAL(kind=8), DIMENSION(Nx+2,Ny+2), INTENT(IN) :: phiLS,H,P
 	REAL(kind=8), DIMENSION(Nx+2,Ny+2), INTENT(IN) :: s_phiLS,s_H
@@ -88,7 +88,8 @@ SUBROUTINE SAVEDATA(Nx,Ny,Lx,Ly,time,x,y,phiLS,s_phiLS,w_phiLS,H,s_H,w_H,P,u,v,f
 									0.25*(s_H(i,j)+s_H(i,j+1)+s_H(i+1,j)+s_H(i+1,j+1)), &
 									0.25*(w_H(i,j)+w_H(i,j+1)+w_H(i+1,j)+w_H(i+1,j+1)), &
 									0.25*(P(i,j)+P(i,j+1)+P(i+1,j)+P(i+1,j+1)), &
-									0.5*(u(i,j)+u(i,j+1)), 0.5*(v(i,j)+v(i+1,j))
+									0.5*(u(i,j)+u(i,j+1)), 0.5*(v(i,j)+v(i+1,j)), &
+                                                                        int_data(i)
 		ENDDO
 	END DO
 
