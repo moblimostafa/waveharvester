@@ -20,7 +20,7 @@ totalpts = xnodes*ynodes;
     
 %    fid = fopen(filestring,'r');
     
-    fid = fopen('file042.dat','r');
+    fid = fopen('file000.dat','r');
 
     line1 = fgetl(fid)
     line2 = fgetl(fid)
@@ -64,7 +64,7 @@ totalpts = xnodes*ynodes;
     %figure(2)
     %surf(X_for_plot,Y_for_plot,S_PHI_for_plot)
     axis equal
-    axis([2.25 3 0.3 0.7])
+    axis([0 5 0 1])
 %end
 
 
