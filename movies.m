@@ -16,14 +16,14 @@ aviobjy = avifile('ycontours_pluslevelset2.avi')
 cirx = [-.05:.001:.05];
 ciry = sqrt(.0025-cirx.^2);
 
-xnodes = 151;
-ynodes = 31;
+xnodes = 76;
+ynodes = 16;
 
 totalpts = xnodes*ynodes;
 
 filenum = -1
 
-for j = 1:11
+for j = 1:131
     
     filenum = filenum +1;
     
@@ -55,6 +55,8 @@ for j = 1:11
     H = data(6,:)';
     S_H = data(7,:)';
     W_H = data(8,:)';
+    U = data(10,:);
+    V = data(11,:);
     INT = data(12,:)';
     
     for i = 1:ynodes
@@ -64,8 +66,10 @@ for j = 1:11
         S_PHI_for_plot(i,:) = S_PHI(xnodes*(i-1)+1:xnodes*i); 
         W_PHI_for_plot(i,:) = W_PHI(xnodes*(i-1)+1:xnodes*i); 
         H_for_plot(i,:) = H(xnodes*(i-1)+1:xnodes*i);
-        S_H_for_plot(i,:) = S_H(xnodes*(i-1)+1:xnodes*i);
+        S_H_for_plot(i,:) = S_H(xnodes*(i-1)+1:xnodes*i); 
         W_H_for_plot(i,:) = W_H(xnodes*(i-1)+1:xnodes*i); 
+        U_for_plot(i,:) = U(xnodes*(i-1)+1:xnodes*i);
+        V_for_plot(i,:) = V(xnodes*(i-1)+1:xnodes*i);
     end 
     
 %     hx =    figure(1)
@@ -112,34 +116,37 @@ for j = 1:11
 %     contour(X_for_plot,Y_for_plot,V_for_plot,[-2/18 -2/18],'--c')
 %     contour(X_for_plot,Y_for_plot,V_for_plot,[-1/18 -1/18],':c')
     
-%     hpress =    figure(1)
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[45 45],'-m')
-%     hold on
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[40 40],'--m')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[35 35],':m')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[30 30],'-r')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[25 25],'--r')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[20 20],':r')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[15 15],'-y')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[10 10],'--y')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[5 5],':y')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[0 0],'-g')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[-5 -5],'-k')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[-10 -10],'--k')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[-15 -15],':k')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[-20 -20],'-b')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[-25 -25],'--b')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[-30 -30],':b')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[-35 -35],'-c')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[-40 -40],'--c')
-%     contour(X_for_plot,Y_for_plot,P_for_plot,[-45 -45],':c')
+     hpress =    figure(1)
+ %     contour(X_for_plot,Y_for_plot,U_for_plot,20)
+      quiver(X_for_plot,Y_for_plot,U_for_plot,V_for_plot)   
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[45 45],'-m')
+ %    hold on
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[40 40],'--m')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[35 35],':m')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[30 30],'-r')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[25 25],'--r')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[20 20],':r')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[15 15],'-y')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[10 10],'--y')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[5 5],':y')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[0 0],'-g')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[-5 -5],'-k')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[-10 -10],'--k')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[-15 -15],':k')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[-20 -20],'-b')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[-25 -25],'--b')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[-30 -30],':b')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[-35 -35],'-c')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[-40 -40],'--c')
+ %    contour(X_for_plot,Y_for_plot,P_for_plot,[-45 -45],':c')
 
 
  %    hp =    figure(3)
-    contour(X_for_plot,Y_for_plot,PHI_for_plot,[0 0],'k')
     hold on
-    contour(X_for_plot,Y_for_plot,S_PHI_for_plot,[0 0],'k')
-    contour(X_for_plot,Y_for_plot,W_PHI_for_plot,[0 0],'k')
+     contour(X_for_plot,Y_for_plot,PHI_for_plot,[0 0],'k')
+    hold on
+      contour(X_for_plot,Y_for_plot,S_PHI_for_plot,[0 0],'k')
+      contour(X_for_plot,Y_for_plot,W_PHI_for_plot,[0 0],'k')
     
     if INT(1) == 1
         cgx = INT(2);
@@ -150,10 +157,16 @@ for j = 1:11
         internal = rot_mat*[0 .05]';
         plot([cgx cgx+internal(1)], [cgy cgy+internal(2)], '-k', ...
              cgx + cirx, cgy + ciry, 'r', cgx + cirx, cgy - ciry, 'r')
+
+    elseif INT(1) == 2 | INT(1) == 3
+	plot(INT(2), INT(3),'.', ...
+	     INT(4), INT(5),'o')
+    
     end
     axis equal
-    axis([0 5 0 1])
-    hy =    figure(1)
+    axis([1 4 0 1])
+ %%   hy =    figure(1)
+      hpress = figure(1)
 %     diameter = 0.4;
 %     w = diameter;
 %     h = diameter;
@@ -162,13 +175,10 @@ for j = 1:11
 %     y = centers(filenum+1,2) + 0.4;
 % %    x = 0.4;
 % %    y = 0.4;
-%     rectangle('Position',[x y w h],'Curvature',[1,1],'FaceColor','k')
-
-    
-    
-   
+%     rectangle('Position',[x y w h],'Curvature',[1,1],'FaceColor','k') 
+       
     %aviobjx = addframe(aviobjx,hx)
-    aviobjy = addframe(aviobjy,hy)
+    aviobjy = addframe(aviobjy,hpress)
     %aviobjp = addframe(aviobjp,hp)
     %aviobjpress = addframe(aviobjpress,hpress)
     close all
@@ -177,5 +187,4 @@ end
 %aviobjx = close(aviobjx)
 aviobjy = close(aviobjy)
 %aviobjp = close(aviobjp)
-%aviobjp = close(aviobjpress)
-    
+%aviobjp = close(aviobjpress

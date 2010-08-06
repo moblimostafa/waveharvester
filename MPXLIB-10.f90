@@ -55,6 +55,11 @@ PROGRAM MPXLIB
         integer :: int_type                                         ! Type of internal component(s)
                                                                     ! 0 = none
                                                                     ! 1 = torsional disc
+                                                                    ! 2 = 2D trans
+                                                                    ! 3 = 1D trans
+        integer :: RB_lock                                          ! Restrain motion of R
+                                                                    ! 0 = No restraints
+                                                                    ! 1 = Vertical motion only
         integer :: aom_counter                                      ! For detecting RB internal instability
         !
         !
@@ -112,7 +117,11 @@ PROGRAM MPXLIB
         !
         real(kind=8) :: Coef(4)
         real(kind=8) :: normal(2)
-        
+        real(kind=8) :: total_energy                                ! Total system energy
+        real(kind=8) :: lin_momx                                    ! Momentum in x-direction
+        real(kind=8) :: lin_momy                                    ! Momentum in y-direction
+        real(kind=8) :: net_mom                                     ! Net momentum
+
         ! Rigid Body Variables
         real(kind=8) :: a_rbLS, b_rbLS, c_rbLS, d_rbLS              ! Rigid body geometry
         
@@ -123,7 +132,7 @@ PROGRAM MPXLIB
         real(kind=8) :: n1_rb_dx,n1_rb_dy
         real(kind=8) :: rx,ry
         
-        real(kind=8) :: n_w_dy                                      ! Rigid body velocities
+        real(kind=8) :: n_w_dy                                      ! Wedge velocities
         real(kind=8) :: n1_w_dy        
         real(kind=8) :: n12_w_vy
         real(kind=8) :: n1_w_vy        
@@ -141,9 +150,10 @@ PROGRAM MPXLIB
         real(kind=8) :: n_rb_vom,n12_rb_vom                         ! Rotational velocities
         real(kind=8) :: n1_rb_vom
         real(kind=8) :: n_rb_aom,n1_rb_aom                          ! Rotational acceleration
-        real(kind=8) :: xc,yc                                       ! Center of mass
+        real(kind=8) :: xc,yc                                       ! Center of mass (Actually, geometric center... -CL)
         real(kind=8) :: u_12,v_12                                   ! Intermediate variables for setting
                                                                     ! fluid velocity to RB velocity
+        real(kind=8) :: adj_factor
 
         ! Torsional Disc Variables               
         real(kind=8) :: small_theta_n, small_theta_n1        
@@ -155,11 +165,39 @@ PROGRAM MPXLIB
         real(kind=8) :: delta_vom                                   ! Angular velocity difference
         real(kind=8) :: int_torque                                  ! Internal torque 
 
-        real(kind=8) :: rb2_mass,small_J                            ! Mass/moment of disc
+        real(kind=8) :: disk_mass,small_J                            ! Mass/moment of disc
         real(kind=8) :: k12                                         ! Torsional spring constant
         real(kind=8) :: c12                                         ! Torsional damping constant
         real(kind=8) :: aom_limit                                   ! Used in detection of instability
-       
+      
+        ! Slider Variables
+        real(kind=8) :: n_rb2_dx,n_rb2_dy                           ! Displacement
+        real(kind=8) :: n1_rb2_dx,n1_rb2_dy                         ! "px" = "pseudo x" - buoy's ref frame
+        
+        real(kind=8) :: n_rb2_vx,n_rb2_vy                           ! Velocities
+        real(kind=8) :: n12_rb2_vx,n12_rb2_vy
+        real(kind=8) :: n1_rb2_vx,n1_rb2_vy
+        
+        real(kind=8) :: n_rb2_ax,n_rb2_ay                           ! Acceleration        
+        real(kind=8) :: n1_rb2_ax,n1_rb2_ay
+                 
+        real(kind=8) :: delta_dpx, delta_dpy                        ! Differences in displacement and velocity
+        real(kind=8) :: delta_vpx,delta_vpy                        
+        real(kind=8) :: int_forcex,int_forcey
+        real(kind=8) :: int_forcepx,int_forcepy
+
+        real(kind=8) :: slider_mass, slider_J                       ! Mass, MoI, and spring/damping constants
+        real(kind=8) :: buoy_J,old_big_J,diff_J
+        real(kind=8) :: scgx,scgy                                   ! Slider Center of Mass
+        real(kind=8) :: kx12            
+        real(kind=8) :: cx12                                     
+        real(kind=8) :: ky12
+        real(kind=8) :: cy12
+
+        real(kind=8) :: max_e,max_w,max_n,max_s                     ! Spring constant adapts to keep mass in buoy
+        real(kind=8) :: kx_adj,ky_adj                               ! Adjusted spring constants
+        real(kind=8) :: ext_px,ext_py                               ! external forces in buoy reference frame
+
 
         ! Integral terms for the RHS of rigid body equations
         real(kind=8) :: n_xint_conv, n_xint_grav, n_xint_inert      ! For the first step the convective and gravity terms
@@ -172,6 +210,16 @@ PROGRAM MPXLIB
         real(kind=8) :: n1_yint_conv, n1_yint_grav                  ! For the first step the convective and gravity terms
         real(kind=8) :: n1_yint_inert                               ! For the correction step, the intertial terms
         
+        ! Integral terms for calculating fluid forces on wedge
+        
+        real(kind=8) :: n_w_conv, n_w_grav                  
+        real(kind=8) :: n_w_inert                     
+        real(kind=8) :: n1_w_conv, n1_w_grav                
+        real(kind=8) :: n1_w_inert
+        real(kind=8) :: wedge_force
+        real(kind=8) :: wedge_work        
+        real(kind=8) :: int_work
+
         ! Integral terms for the RHS of rigid body equations
         real(kind=8) :: r_int_conv, r_int_grav                      ! For the first step the convective and gravity terms
         real(kind=8) :: r_int_inert                                 ! For the correction step, the inertial terms
@@ -188,7 +236,8 @@ PROGRAM MPXLIB
         real(kind=8) :: y1,y2,y3,y4
         real(kind=8) :: nx1,nx2,nx3,nx4                             ! square variables
         real(kind=8) :: ny1,ny2,ny3,ny4
-        real(kind=8) :: cgx,cgy,ncgx,ncgy
+        real(kind=8) :: cgx,cgy,ncgx,ncgy                           ! center of mass (CL)
+        real(kind=8) :: netcgx,netcgy                               ! net center of mass (buoy + internals)
 
         real(kind=8) :: cost,sint
         real(kind=8) :: Det,a_det,b_det,c_det,temp        
@@ -309,15 +358,20 @@ PROGRAM MPXLIB
         !** PROPERTIES ** 
         READ (UNIT=2,FMT=50) variables                               ! skip text line
         READ (UNIT=2,FMT=50) variables                               ! skip text line
-        READ (UNIT=2,FMT=50) variables                               !  skip text line
+        READ (UNIT=2,FMT=50) variables                               ! skip text line
         READ (UNIT=2,FMT=60) rb_shape                                ! shape of the rigid body
-                                                                     ! 1 = circle
-                                                                     ! 2 = ellipse
+                                                                     !   1 = circle
+                                                                     !   2 = ellipse
         READ (UNIT=2,FMT=60) int_type                                ! type of internal component(s)
-                                                                     ! 0 = none
-                                                                     ! 1 = disc
+                                                                     !   0 = none
+                                                                     !   1 = disc
+                                                                     !   2 = 2D trans
+                                                                     !   3 = 1D trans
+        READ (UNIT=2,FMT=60) RB_lock                                 ! restrict motion of RB
+                                                                     !   0 = No restraints
+                                                                     !   1 = Vertical motion only
         READ (UNIT=2,FMT=70) rb1_mass                                ! mass of the rigid body
-        READ (UNIT=2,FMT=70) big_J                                   ! rotational moment of inertia of the rigid body
+        READ (UNIT=2,FMT=70) buoy_J                                  ! rotational moment of inertia of the rigid body
         READ (UNIT=2,FMT=70) rho_one                                 ! density of first fluid, H=1, phiLS>0        (liquid)
         READ (UNIT=2,FMT=70) rho_two                                 ! density of second fluid, H=0, phiLS<0        (vapor)
         READ (UNIT=2,FMT=70) mu_one                                  ! viscosity of first fluid
@@ -448,10 +502,24 @@ PROGRAM MPXLIB
         !
         !** TORSIONAL DISC PARAMETERS (int_type = 1) ***        
         READ (UNIT=2,FMT=50) variables   
-        READ (UNIT=2,FMT=70) rb2_mass                                ! mass of the torsional disc
+        READ (UNIT=2,FMT=70) disk_mass                                ! mass of the torsional disc
         READ (UNIT=2,FMT=70) small_J                                 ! rotational moment of inertia of the disc
         READ (UNIT=2,FMT=70) k12                                     ! torsional spring constant
         READ (UNIT=2,FMT=70) c12                                     ! torsional damping constant
+        !        
+        READ (UNIT=2,FMT=50) variables  ! skip blank line
+        READ (UNIT=2,FMT=50) variables  ! skip blank line
+        !
+        !** SLIDER PARAMETERS (int_type = 2 OR 3) ***
+        ! int_type = 2 IGNORES slider_J
+        ! int_type = 3 IGNORES kx12 and cx12       
+        READ (UNIT=2,FMT=50) variables   
+        READ (UNIT=2,FMT=70) slider_mass                             ! mass of the slider
+        READ (UNIT=2,FMT=70) slider_J                                ! rotational moment of inertia of the slider
+        READ (UNIT=2,FMT=70) kx12                                    ! slider spring constant (x-direction)
+        READ (UNIT=2,FMT=70) cx12                                    ! slider damping constant (x-direction)
+        READ (UNIT=2,FMT=70) ky12                                    ! slider spring constant (y-direction)
+        READ (UNIT=2,FMT=70) cy12                                    ! slider damping constant (y-direction)
         !
         READ (UNIT=2,FMT=50) variables  ! skip blank line
         !
@@ -597,27 +665,70 @@ PROGRAM MPXLIB
 
            ! Internal Parameters
  
-           int_data = 0.0                                                ! Internal data
+           int_data = 0.0                                ! Internal data for postprocessing
            int_data(1) = int_type
 
-           ! System Mass & Internal Time Step Requirement (Estimate)
+           ! RB/Internals components
            
            dtinternal = 10.0
+
+           ncgx = cgx
+           ncgy = cgy
+           netcgx = cgx
+           netcgy = cgy
 
            if (int_type == 0) then
              
              rb_mass = rb1_mass
+             big_J = buoy_J
 
            elseif (int_type == 1) then
              
-             rb_mass = rb1_mass + rb2_mass
+             rb_mass = rb1_mass + disk_mass
+             big_J = buoy_J
              
              if ((k12 /= 0.0) .and. (c12 /= 0.0)) then
              dtinternal = min( sqrt(min(big_J,small_J)/k12), sqrt(min(big_J,small_J)/c12) )
              endif
 
              aom_counter = 0
-             aom_limit = 10
+             
+             if (k12 /= 0.0) then
+                aom_limit = 400/k12
+             else
+                aom_limit = 500
+             endif
+           
+           elseif (int_type == 2) then
+
+             rb_mass = rb1_mass
+             big_J = buoy_J
+             old_big_J = big_J
+             scgx = cgx                                
+             scgy = cgy
+             max_w = x1 - cgx
+             max_e = x2 - cgx
+             max_n = y1 - cgy
+             max_s = y3 - cgy
+             
+             if ((kx12 /= 0.0) .and. (ky12 /= 0.0)) then
+             dtinternal = 0.5 * min( sqrt(min(rb1_mass,slider_mass)/kx12), &
+                                     sqrt(min(rb1_mass,slider_mass)/ky12) )
+             endif
+
+           elseif (int_type == 3) then
+
+             rb_mass = rb1_mass
+             big_J = buoy_J + slider_J                ! Initially
+             old_big_J = big_J
+             scgx = cgx                                
+             scgy = cgy
+             max_w = x1 - cgx
+             max_e = x2 - cgx
+             max_n = y1 - cgy
+             max_s = y3 - cgy
+
+
            end if
 
            ! Torsional Disc
@@ -633,6 +744,39 @@ PROGRAM MPXLIB
            delta_theta = 0.0
            delta_vom = 0.0
            int_torque = 0.0
+           int_work = 0.0
+
+           ! Slider
+           n_rb2_dx = 0.0                            ! Displacement        
+           n_rb2_dy = 0.0
+           n1_rb2_dx = 0.0
+           n1_rb2_dy = 0.0
+        
+           n_rb2_vx = 0.0                            ! Velocities
+           n_rb2_vy = 0.0                          
+           n12_rb2_vx = 0.0
+           n12_rb2_vy = 0.0
+           n1_rb2_vx = 0.0
+           n1_rb2_vy = 0.0
+        
+           n_rb2_ax = 0.0                            ! Acceleration  
+           n_rb2_ay = 0.0
+           n1_rb2_ax = 0.0
+           n1_rb2_ay = 0.0
+       
+           delta_dpx = 0.0                           ! Differences in displacement and velocity
+           delta_dpy = 0.0                     
+           delta_vpx = 0.0
+           delta_vpy = 0.0
+
+           diff_J = 0.0
+           int_forcex = 0.0                          ! Internal forces                  
+           int_forcey = 0.0
+           int_forcepx = 0.0
+           int_forcepy = 0.0
+           
+           ext_px = 0.0                              ! External forces
+           ext_py = 0.0
 
         ! Initialize intergral variables two different directions
         n_xint_conv  = 0.0
@@ -651,7 +795,20 @@ PROGRAM MPXLIB
         n1_yint_conv  = 0.0
         n1_yint_grav  = 0.0
         n1_yint_inert = 0.0
+
+        ! Initialize integral variables for wedge (in one direction)
         
+        n_w_conv  = 0.0
+        n_w_grav  = 0.0
+        n_w_inert = 0.0
+        
+        n1_w_conv  = 0.0
+        n1_w_grav  = 0.0
+        n1_w_inert = 0.0
+
+        wedge_force = 0.0
+        wedge_work = 0.0
+
         ! Initialize rotation integral variables
         r_int_conv  = 0.0
         r_int_grav  = 0.0
@@ -1030,7 +1187,80 @@ PROGRAM MPXLIB
         deltaT = min(1.0/( max(mu_one/rho_one,mu_two/rho_two)*&
                          (2.0/(deltaX**2.0) + 2.0/(deltaY**2.0)) ),dtinternal)
 
+        ! Calculate initial work done by wedge
+        if (wedge .EQV. .TRUE.) then 
+          
+          do i=2,Nx+1
+            do j=2,Ny     
+              
+              ! density at the half node
+              rho_O = 0.5*(rho_one*H(i,j+1) + rho_two*(1.0-H(i,j+1)))+&
+                      0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))
+
+              if (0.5*(w_H(i,j)+w_H(i,j+1)) > 0) then                                      
+                
+                vstar_int = 0.0
+                
+                n_w_inert = n1_w_inert + &
+                                0.5*(w_H(i,j)+w_H(i,j+1))*&
+                                rho_O/DeltaT*(v(i,j) - v_old(i,j))*&
+                                deltaX*deltaY
+                                                                                        
+                n_w_conv = n1_w_conv + &
+                               0.5*(w_H(i,j)+w_H(i,j+1))*&
+                               rho_O*vstar_int*deltaX*deltaY
+                                
+                n_w_grav = n1_w_grav + 0.5*&
+                               (w_H(i,j)+w_H(i,j+1))*rho_O*deltaX*deltaY*gy
+
+              endif
+              
+              wedge_force = n_w_inert + n_w_conv + n_w_grav
+              wedge_work = wedge_work - (wedge_force * n1_w_vy * deltaT)
+
+            enddo
+          enddo
+        endif
+
+
         ! --- INITIAL SET OF RIGID BODY FORCES
+
+        total_energy = 0.0
+        lin_momx = 0.0
+        lin_momy = 0.0
+        
+        ! Fluid Energy Contribution
+        if (rigidbody .EQV. .FALSE.) then
+          do i=2,Nx+1
+            do j=2,Ny+1
+  
+              if (i < Nx+1) then
+                rho_O = 0.5*(rho_one*H(i+1,j) + rho_two*(1.0-H(i+1,j)))+&
+                        0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))
+                                                 
+                total_energy = total_energy + 0.5*rho_O*(u(i,j)**2)*deltaX*deltaY  ! kinetic (in x)
+                lin_momx = lin_momx + rho_O*u(i,j)*deltaX*deltaY
+              endif
+              
+              if (j < Ny+1) then
+                rho_O = 0.5*(rho_one*H(i,j+1) + rho_two*(1.0-H(i,j+1)))+&
+                        0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))                          
+
+                total_energy = total_energy + 0.5*rho_O*(v(i,j)**2)*deltaX*deltaY ! kinetic (in y)
+                lin_momy = lin_momy + rho_O*v(i,j)*deltaX*deltaY
+              endif
+
+              if ((i < Nx+1) .AND. (j < Ny+1)) then 
+                rho_O = rho_one*H(i,j) + rho_two*(1.0-H(i,j))
+
+                total_energy = total_energy + &
+                               ( -P(i,j) + rho_O*gy*(j-1)*deltaY ) * &
+                               deltaX*deltaY
+              endif
+
+            enddo
+          enddo
+        endif
 
         if (rigidbody .EQV. .TRUE.) then
           ! Collect some integrals
@@ -1041,8 +1271,10 @@ PROGRAM MPXLIB
               ! density at the half node
               rho_O = 0.5*(rho_one*H(i+1,j) + rho_two*(1.0-H(i+1,j)))+&
                       0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))
-                                                
-                                                
+                                                 
+              total_energy = total_energy + 0.5*rho_O*(u(i,j)**2)*deltaX*deltaY  ! kinetic (in x)
+              lin_momx = lin_momx + rho_O*u(i,j)*deltaX*deltaY
+
               if (0.5*(s_H(i,j)+s_H(i+1,j)) > 0) then
                                                 
                 ! dummy variable for the convective opperator
@@ -1063,7 +1295,7 @@ PROGRAM MPXLIB
                                                 
                 ! Rotations
                 ! rs is the s-distance from the location at i,j to the centroid of the object.
-                ry = ywhole(j) - cgy
+                ry = ywhole(j) - netcgy
                                                 
                 r1_int_inert = r1_int_inert - &
                                ry*0.5*(s_H(i,j)+s_H(i+1,j))*&
@@ -1089,11 +1321,14 @@ PROGRAM MPXLIB
                         
               ! density at the half node
               rho_O = 0.5*(rho_one*H(i,j+1) + rho_two*(1.0-H(i,j+1)))+&
-                      0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))
-                                                
+                      0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))                          
+
+              total_energy = total_energy + 0.5*rho_O*(v(i,j)**2)*deltaX*deltaY ! kinetic (in y)
+              lin_momy = lin_momy + rho_O*v(i,j)*deltaX*deltaY
+
               if (0.5*(s_H(i,j)+s_H(i,j+1)) > 0) then
                                         
-                ! dummy variable for the convective opperator
+                ! dummy variable for the convective operator
                 vstar_int = 0.0
                                                         
                 n_yint_inert = n1_yint_inert +&
@@ -1111,7 +1346,7 @@ PROGRAM MPXLIB
                                                 
                 ! Rotations
                 ! rs is the s-distance from the location at i,j to the centroid of the object.
-                rx = xwhole(i) - cgx
+                rx = xwhole(i) - netcgx
                                                 
                 r_int_inert = r1_int_inert + &
                               rx*0.5*(s_H(i,j)+s_H(i,j+1))*&
@@ -1125,13 +1360,26 @@ PROGRAM MPXLIB
                 r_int_grav = r1_int_grav + &
                              rx*0.5*(s_H(i,j)+s_H(i,j+1))*&
                              rho_O*deltaX*deltaY*gy
-                                
-              endif
+              endif                                  
+                
             enddo
           enddo
 
-          ! Initial internal forces
-          
+          ! Pressure and gravitational contributions to total energy
+          do i=2,Nx
+            do j=2,Ny     
+              
+              ! density at the whole node
+              rho_O = rho_one*H(i,j) + rho_two*(1.0-H(i,j))
+
+              total_energy = total_energy + &
+                             ( -P(i,j) + rho_O*gy*(j-1)*deltaY ) * &
+                             deltaX*deltaY
+
+            enddo
+          enddo
+
+          ! Initial internal forces          
           if (int_type == 1) then                               ! Torque exerted between disc and RB
               
               small_theta_n = th
@@ -1141,14 +1389,152 @@ PROGRAM MPXLIB
               int_data(2) = cgx                                 ! Save data for post-processing
               int_data(3) = cgy
               int_data(4) = small_theta_n
+              
+              ! Acceleration
+              n_rb2_aom = -int_torque/small_J
+
+              ! Energy
+              int_work = int_work + c12*(delta_vom**2)*deltaT
+              total_energy = total_energy + &
+                             0.5*small_J*(n_rb2_vom**2) + &
+                             0.5*k12*(delta_theta**2)
+     
+          elseif (int_type == 2) then
+
+              ! Coordinate Transformation
+              delta_vpx =  cos(th)*(n_rb2_vx - n_rb_vx) + sin(th)*(n_rb2_vy - n_rb_vy)
+              delta_vpy = -sin(th)*(n_rb2_vx - n_rb_vx) + cos(th)*(n_rb2_vy - n_rb_vy)
+
+              delta_dpx =  cos(th)*(n_rb2_dx - n_rb_dx) + sin(th)*(n_rb2_dy - n_rb_dy)
+              delta_dpy = -sin(th)*(n_rb2_dx - n_rb_dx) + cos(th)*(n_rb2_dy - n_rb_dy)
+
+              if ((delta_dpx >= 0.8*max_e) .or. (delta_dpx <= 0.8*max_w)) then
+                      kx_adj = 100*kx12
+              else
+                      kx_adj = (.64*kx12*max_e*max_w) / ((delta_dpx - 0.8*max_e)*(delta_dpx - 0.8*max_w))
+              endif
+
+              if ((delta_dpy >= 0.8*max_n) .or. (delta_dpy <= 0.8*max_s)) then
+                      ky_adj = 100*ky12
+              else
+                      ky_adj = (.64*ky12*max_n*max_s) / ((delta_dpy - 0.8*max_n)*(delta_dpy - 0.8*max_s))
+
+              endif
+
+              int_forcepx = kx_adj*delta_dpx + cx12*delta_vpx
+              int_forcepy = ky_adj*delta_dpy + cy12*delta_vpy
+
+              ! Inverse Transformation
+              int_forcex = cos(th)*int_forcepx - sin(th)*int_forcepy
+              int_forcey = sin(th)*int_forcepx + cos(th)*int_forcepy
+              
+              ! Center of Mass update
+              scgx = cgx + n_rb2_dx
+              scgy = cgy + n_rb2_dy
+              int_data(2) = cgx
+              int_data(3) = cgy
+              int_data(4) = scgx
+              int_data(5) = scgy
+
+              ! Acceleration
+              n_rb2_ax = - int_forcex/slider_mass
+              n_rb2_ay = - int_forcey/slider_mass - gy
+
+              ! Energy
+              int_work = int_work + deltaT * (cx12*(delta_vpx**2) + cy12*(delta_vpy**2))
+              total_energy = total_energy + &
+                             0.5*slider_mass*((n_rb2_vx**2) + (n_rb2_vy**2)) + &
+                             0.5*kx12*(delta_dpx**2) + &
+                             0.5*ky12*(delta_dpy**2)
+              lin_momx = lin_momx + slider_mass*n_rb2_vx
+              lin_momy = lin_momy + slider_mass*n_rb2_vy
+
+          elseif (int_type == 3) then
+
+              ! Coordinate Transformation
+
+              ! delta_vpy = -sin(th)*(n_rb2_vx - n_rb_vx) + cos(th)*(n_rb2_vy - n_rb_vy)           
+              ! delta_dpy = -sin(th)*(n_rb2_dx - n_rb_dx) + cos(th)*(n_rb2_dy - n_rb_dy)
+
+              if ((delta_dpy >= max_n) .or. (delta_dpy <= max_s)) then
+                      ky_adj = 10000
+              else
+                      ky_adj = (ky12*max_n*max_s) / ((delta_dpy - max_n)*(delta_dpy - max_s))
+              endif
+
+              int_forcepy = ky_adj*delta_dpy + cy12*delta_vpy + cos(th)*slider_mass*gy
+              
+              ! External Forces
+              ext_px =  cos(th)*(n_xint_inert + n_xint_conv + n_xint_grav) + &
+                        sin(th)*(n_yint_inert + n_yint_conv + n_yint_grav + sin(th)*slider_mass*gy)
+              ext_py = -sin(th)*(n_xint_inert + n_xint_conv + n_xint_grav) + &
+                        cos(th)*(n_yint_inert + n_yint_conv + n_yint_grav + sin(th)*slider_mass*gy)
+
+              ! Inverse Transformation
+              int_forcex = - sin(th)*int_forcepy
+              int_forcey =   cos(th)*int_forcepy
+              
+              ! Center of Mass / Moment of Inertia update
+              n_rb2_dx = - sin(th)*delta_dpy
+              n_rb2_dy =   cos(th)*delta_dpy
+              scgx = cgx + n_rb2_dx
+              scgy = cgy + n_rb2_dy
+              netcgx = (rb1_mass*cgx + slider_mass*scgx)/(rb1_mass + slider_mass)
+              netcgy = (rb1_mass*cgy + slider_mass*scgy)/(rb1_mass + slider_mass)
+              big_J = buoy_J + rb1_mass*((netcgx - cgx)**2 + (netcgy - cgy)**2) + &
+                      slider_J + slider_mass*((netcgx - scgx)**2 + (netcgy - scgy)**2)
+              diff_J = (big_J - old_big_J)/deltaT
+              int_data(2) = cgx
+              int_data(3) = cgy
+              int_data(4) = scgx
+              int_data(5) = scgy
+
+              ! Buoy Acceleration
+              n_rb_ax = cos(th)*(ext_px/(rb1_mass+slider_mass)) - sin(th)*(ext_py/rb1_mass) + &
+                        int_forcex/rb1_mass - gx
+              n_rb_ay = sin(th)*(ext_px/(rb1_mass+slider_mass)) + cos(th)*(ext_py/rb1_mass) + &
+                        int_forcey/rb1_mass - gy
+              n_rb_aom = (r_int_inert + r_int_conv + r_int_grav + int_torque - &
+                         n_rb_vom*diff_J)/big_J
+
+              ! Internal Acceleration
+              ! n_rb2_ax = - int_forcex/slider_mass
+              n_rb2_ay = - int_forcepy/slider_mass
+
+              ! Energy
+              int_work = int_work + deltaT * (cx12*(delta_vpx**2) + cy12*(delta_vpy**2))
+              total_energy = total_energy + &
+                             0.5*slider_mass*((n_rb2_vx**2) + (n_rb2_vy**2)) + &
+                             0.5*kx12*(delta_dpx**2) + &
+                             0.5*ky12*(delta_dpy**2)
 
           endif
       
           ! First set of rigid body accelerations
-          n_rb_ax = (n_xint_inert + n_xint_conv + n_xint_grav)/rb_mass - gx        
-          n_rb_ay = (n_yint_inert + n_yint_conv + n_yint_grav)/rb_mass - gy        
-          n_rb_aom = (r_int_inert + r_int_conv + r_int_grav + int_torque)/big_J
-          n_rb2_aom = -int_torque/small_J
+          if (int_type /= 3) then
+          n_rb_ax = (n_xint_inert + n_xint_conv + n_xint_grav + int_forcex)/rb_mass - gx        
+          n_rb_ay = (n_yint_inert + n_yint_conv + n_yint_grav + int_forcey)/rb_mass - gy        
+          n_rb_aom = (r_int_inert + r_int_conv + r_int_grav + int_torque - &
+                      n_rb_vom*diff_J)/big_J
+          endif
+
+
+          ! Restrict motion
+          if (RB_lock == 1) then
+             n_rb_ax = 0.0
+             n_rb_aom = 0.0
+             n1_rb_ax = 0.0
+             n1_rb_aom = 0.0
+          endif
+
+          ! Energy Update
+          total_energy = total_energy + &
+                         rb_mass*gy*cgy + &
+                         0.5*rb_mass*((n_rb_vx**2)+(n_rb_vy**2)) + &
+                         0.5*big_J*(n_rb_vom**2)
+          lin_momx = lin_momx + rb_mass*n_rb_vx
+          lin_momy = lin_momy + rb_mass*n_rb_vy
+          
 
         endif
 
@@ -1158,6 +1544,10 @@ PROGRAM MPXLIB
         ! //////////////////////// SOLVING EQUATIONS \\\\\\\\\\\\\\\\\\\\\\\
         do  ! time loop
         
+        !Calculate net momentum
+        net_mom = sqrt((lin_momx**2) + (lin_momy**2))
+
+
           ! CREATING DATA FILE
           OPEN (UNIT=8,FILE='centers.dat', POSITION ='append', IOSTAT=ios)
           WRITE (UNIT=8,FMT=90) n_rb_dx, n_rb_dy, n_rb_vx, n_rb_vy,&
@@ -1165,11 +1555,29 @@ PROGRAM MPXLIB
           CLOSE (UNIT=8)
                 
           OPEN (UNIT=7,FILE='rotations.dat', POSITION ='append', IOSTAT=ios)
-          WRITE (UNIT=7,FMT=90) th, small_theta_n, deltaT, n_rb_vom, n_rb_aom,&
-                                int_torque, r_int_grav, r_int_conv, r_int_inert
+          WRITE (UNIT=7,FMT=90) deltaT, th, net_mom, n_rb_aom,&
+                                r_int_grav, r_int_conv, r_int_inert, total_energy
           CLOSE (UNIT=7)
-        
-                
+          
+          OPEN (UNIT=7,FILE='time_step.dat', POSITION ='append', IOSTAT=ios)
+          WRITE (UNIT=7,FMT=90) deltaT, dtvisc, dtadv, dtg, &
+                                dtsigma, dtinternal, stability
+          CLOSE (UNIT=7)
+
+          if ((rigidbody .EQV. .TRUE.) .and. (int_type == 1)) then
+              OPEN (UNIT=7,FILE='disk.dat', POSITION ='append', IOSTAT=ios)
+              WRITE (UNIT=7,FMT=90) deltaT, th, small_theta_n, total_energy,& 
+                                    wedge_work, int_work, n_rb_aom, int_torque
+              CLOSE (UNIT=7)
+
+          elseif ((rigidbody .EQV. .TRUE.) .and. ((int_type == 2) .or. (int_type == 3))) then
+              OPEN (UNIT=7,FILE='trans.dat', POSITION ='append', IOSTAT=ios)
+              WRITE (UNIT=7,FMT=90) deltaT, delta_dpx, delta_dpy, total_energy,&
+                                    wedge_work, int_work, int_forcex, int_forcey
+              CLOSE (UNIT=7)
+          
+          endif
+
           !---- FIND MAX VELOCITY ----
           ! finding the stable timestep
           umax = max(unorth,usouth)
@@ -1193,6 +1601,14 @@ PROGRAM MPXLIB
           dtg=sqrt( min(deltaX,deltaY)/max(gx,gy,1.0e-16) )
           dtsigma=sqrt( min(rho_one,rho_two)*min(deltaX,deltaY)**3.0/&
                         (4.0*pi*sigma+1.0e-16) )
+
+          if ((rigidbody .EQV. .TRUE.) .and. (int_type == 2) .and. &
+              (kx_adj /= 0.0) .and. (ky_adj /= 0.0)) then
+
+             dtinternal = 0.5 * min( sqrt(min(rb1_mass,slider_mass)/kx_adj), &
+                                     sqrt(min(rb1_mass,slider_mass)/ky_adj) )
+          endif            
+
           deltaT=min(dtvisc,dtadv,dtg,dtsigma,dtinternal)
           deltaT=stability*deltaT  ! stability must be less than 0.9
           deltaT = min(deltaT,time_print)
@@ -1223,44 +1639,116 @@ PROGRAM MPXLIB
 
           ! Calculate Rigid Body motion
           if (rigidbody .EQV. .TRUE.) then
-            ! Compute Relative rotation vector 
-            big_theta = deltaT*n_rb_vom + 0.5*deltaT**2*n_rb_aom
-                
-            c1 = (sin(abs(big_theta)))/abs(big_theta)
-            c2 = 2*(sin(0.5*abs(big_theta))**2)/(big_theta**2)        
-                
-            ! The exponential map
-            exp_big_theta(1,1) = 1.0 - c2*big_theta**2
-            exp_big_theta(1,2) = -c1*big_theta
-            exp_big_theta(2,1) =  c1*big_theta
-            exp_big_theta(2,2) = 1.0 - c2*big_theta**2
-                
-            ! Rotational velocity at (n+1/2)
-            n12_rb_vom = n_rb_vom + 0.5*deltaT/big_J*&
-                                       (r_int_inert + r_int_conv + r_int_grav)
+            
+            ! Check for motion restrictions      
+            if (RB_lock /= 1) then
 
-            ! Internal rotational velocity at (n+1/2)
-            if (int_type == 1) then
-              n12_rb2_vom = n_rb2_vom + 0.5*deltaT*n_rb2_aom
+              ! Compute Relative rotation vector 
+              big_theta = deltaT*n_rb_vom + 0.5*deltaT**2*n_rb_aom
+                
+              c1 = (sin(abs(big_theta)))/abs(big_theta)
+              c2 = 2*(sin(0.5*abs(big_theta))**2)/(big_theta**2)        
+                
+              ! The exponential map
+              exp_big_theta(1,1) = 1.0 - c2*big_theta**2
+              exp_big_theta(1,2) = -c1*big_theta
+              exp_big_theta(2,1) =  c1*big_theta
+              exp_big_theta(2,2) = 1.0 - c2*big_theta**2
+                
+              ! Rotational velocity at (n+1/2)
+              n12_rb_vom = n_rb_vom + 0.5*deltaT/big_J*&
+                                       (r_int_inert + r_int_conv + r_int_grav)
             endif
 
             ! Calculate the rigid body velocity at v(n+1/2)
             n12_rb_vx = n_rb_vx + 0.5*deltaT*n_rb_ax
             n12_rb_vy = n_rb_vy + 0.5*deltaT*n_rb_ay
-                
-            ! Calculate d(n+1)
-                
+            
+            ! Calculate d(n+1)                
             n1_rb_dx = n_rb_dx + deltaT*n12_rb_vx 
             n1_rb_dy = n_rb_dy + deltaT*n12_rb_vy
-                
-            n1_rbdelom(1,1) = n_rbdelom(1,1)*exp_big_theta(1,1) +&
-                              n_rbdelom(1,2)*exp_big_theta(2,1)
-            n1_rbdelom(1,2) = n_rbdelom(1,1)*exp_big_theta(1,2) +&
-                              n_rbdelom(1,2)*exp_big_theta(2,2)
-            n1_rbdelom(2,1) = n_rbdelom(2,1)*exp_big_theta(1,1) +&
-                              n_rbdelom(2,2)*exp_big_theta(2,1)
-            n1_rbdelom(2,2) = n_rbdelom(2,1)*exp_big_theta(1,2) +&
-                              n_rbdelom(2,2)*exp_big_theta(2,2)
+            
+            ! Check for motion restrictions   
+            if (RB_lock /= 1) then 
+              n1_rbdelom(1,1) = n_rbdelom(1,1)*exp_big_theta(1,1) +&
+                                n_rbdelom(1,2)*exp_big_theta(2,1)
+              n1_rbdelom(1,2) = n_rbdelom(1,1)*exp_big_theta(1,2) +&
+                                n_rbdelom(1,2)*exp_big_theta(2,2)
+              n1_rbdelom(2,1) = n_rbdelom(2,1)*exp_big_theta(1,1) +&
+                                n_rbdelom(2,2)*exp_big_theta(2,1)
+              n1_rbdelom(2,2) = n_rbdelom(2,1)*exp_big_theta(1,2) +&
+                                n_rbdelom(2,2)*exp_big_theta(2,2)
+            endif
+
+
+            if (int_type == 1) then
+
+              ! Internal rotational velocity at (n+1/2)
+              n12_rb2_vom = n_rb2_vom + 0.5*deltaT*n_rb2_aom
+
+            elseif (int_type == 2) then
+              
+              ! Internal translational velocity at (n+1/2)  
+              n12_rb2_vx = n_rb2_vx + 0.5*deltaT*n_rb2_ax
+              n12_rb2_vy = n_rb2_vy + 0.5*deltaT*n_rb2_ay
+
+              ! Calculate internal displacement d(n+1)
+              n1_rb2_dx = n_rb2_dx + deltaT*n12_rb2_vx 
+              n1_rb2_dy = n_rb2_dy + deltaT*n12_rb2_vy        
+            
+              ! Calculate new CoM and MoI           
+              ncgx = cgx + n1_rb_dx
+              ncgy = cgy + n1_rb_dy
+              scgx = cgx + n1_rb2_dx
+              scgy = cgy + n1_rb2_dy
+              int_data(2) = ncgx
+              int_data(3) = ncgy
+              int_data(4) = scgx
+              int_data(5) = scgy 
+
+            elseif (int_type == 3) then
+              
+              ! Internal translational velocity at (n+1/2)  
+              ! n12_rb2_vx = n_rb2_vx + 0.5*deltaT*n_rb2_ax
+              ! n12_rb2_vy = n_rb2_vy + 0.5*deltaT*n_rb2_ay
+              delta_vpy = delta_vpy + 0.5*n_rb2_ay
+
+              ! Calculate internal displacement d(n+1)
+              ! n1_rb2_dx = n_rb2_dx + deltaT*n12_rb2_vx 
+              ! n1_rb2_dy = n_rb2_dy + deltaT*n12_rb2_vy        
+              delta_dpy = delta_dpy + deltaT*delta_vpy
+
+              ! Adjust
+              ! adj_factor = deltaT*(n12_rb_vx*cos(th)-n12_rb_vy*sin(th))
+              ! n1_rb2_dx = n1_rb2_dx + (adj_factor*cos(th))
+              ! n1_rb2_dy = n1_rb2_dy - (adj_factor*sin(th))
+
+              ! Calculate new CoM and MoI
+              n1_rb2_dx = - sin(th)*delta_dpy
+              n1_rb2_dy =   cos(th)*delta_dpy
+              ncgx = cgx + n1_rb_dx
+              ncgy = cgy + n1_rb_dy
+              scgx = ncgx + n1_rb2_dx
+              scgy = ncgy + n1_rb2_dy
+              netcgx = (rb1_mass*ncgx + slider_mass*scgx)/(rb1_mass + slider_mass)
+              netcgy = (rb1_mass*ncgy + slider_mass*scgy)/(rb1_mass + slider_mass)
+              old_big_J = big_J
+              big_J = buoy_J + rb1_mass*((netcgx - ncgx)**2 + (netcgy - ncgy)**2) + &
+                      slider_J + slider_mass*((netcgx - scgx)**2 + (netcgy - scgy)**2)
+              diff_J = (big_J - old_big_J)/deltaT
+              int_data(2) = ncgx
+              int_data(3) = ncgy
+              int_data(4) = scgx
+              int_data(5) = scgy 
+            
+            endif     
+
+            if (int_type /= 3) then
+              netcgx = ncgx
+              netcgy = ncgy
+            endif
+
+                      
           endif
                 
           ! ////////////////////////// VELOCITY \\\\\\\\\\\\\\\\\\\\\\\\\\\
@@ -1271,36 +1759,39 @@ PROGRAM MPXLIB
                           deltaX,deltaY,phiLS,contC,contA,contR,contM,1)
                                                 
           ! ---- FORCE THE FLUID WITH THE RIGID BODY ---- !
+                           
+          if (rigidbody .EQV. .TRUE.) then          
+            
+            ! Enforce the rigid body boundary condition on fluid velocity                 
+            do i=1,Nx+1
+              do j=1,Ny+1
                                                 
-          ! Enforce the rigid body boundary condition on fluid velocity                 
-          do i=1,Nx+1
-            do j=1,Ny+1
-                                                
-              if ( 0.5*(s_phiLS(i+1,j) + s_phiLS(i,j)) >= 0) then
+                if ( 0.5*(s_phiLS(i+1,j) + s_phiLS(i,j)) >= 0) then
 
-                ry = ywhole(j) - yc
+                  ry = ywhole(j) - netcgy
 
-                ! new velocity, n+1/2 time level
-                u(i,j) = n12_rb_vx - n12_rb_vom*ry
+                  ! new velocity, n+1/2 time level
+                  u(i,j) = n12_rb_vx - n12_rb_vom*ry
 
 
-              endif
+                endif
+              enddo
             enddo
-          enddo
 
-          do i=1,Nx+2
-            do j=1,Ny+1
+            do i=1,Nx+2
+              do j=1,Ny+1
                                 
-              if ( 0.5*(s_phiLS(i,j) + s_phiLS(i,j+1)) >= 0) then
+                if ( 0.5*(s_phiLS(i,j) + s_phiLS(i,j+1)) >= 0) then
 
-                rx = xwhole(i) - xc
+                  rx = xwhole(i) - netcgx
 
-                ! new velocity, n+1/2 time level
-                v(i,j) = n12_rb_vy + n12_rb_vom*rx
+                  ! new velocity, n+1/2 time level
+                  v(i,j) = n12_rb_vy + n12_rb_vom*rx
 
-              endif
+                endif
+              enddo
             enddo
-          enddo
+          endif
 
           if (wedge .EQV. .TRUE.) then
             do i=1,Nx+1
@@ -1995,7 +2486,7 @@ PROGRAM MPXLIB
                     !CALL ENODIFF(Nx,Ny,i,j,deltaX,deltaY,u,v,phiLS,DiffX,DiffY)
                                                         
                     ! use WENO on interior (up to 5th order accurate)
-                    CALL WENODIFF(Nx,Ny,i,j,deltaX,deltaY,u,v,phiLS,DiffX,DiffY)
+                    CALL ENODIFF(Nx,Ny,i,j,deltaX,deltaY,u,v,phiLS,DiffX,DiffY)
                   endif
                                                 
                                                 
@@ -2053,14 +2544,17 @@ PROGRAM MPXLIB
           endif  ! end of trackphase
 
                 
-          ! /////////// RIGID BODY DYNAMICS - UPDATED VELOCITY \\\\\\\\\\\\\\\
+          ! /////////// ADVANCE THE WEDGE - WHILE CALCULATING ENERGY INPUT \\\\\\\\\\\\\\\
           
           if (wedge .EQV. .TRUE.) then      
             
-            n12_w_vy = -2*pi*0.2*sin(2*pi*(time + 0.5*deltaT))
-                
-            ! Calculate d(n+1)
-                
+            if (time < 2) then      
+                n12_w_vy = -2*pi*0.2*sin(2*pi*(time + 0.5*deltaT))
+            else
+                n12_w_vy = 0
+            endif
+
+            ! Calculate d(n+1)                
             !n1_rb_dx = n_rb_dx + deltaT*n12_rb_vx 
             n1_w_dy = n_w_dy + deltaT*n12_w_vy
                 
@@ -2073,12 +2567,130 @@ PROGRAM MPXLIB
                 else
                   w_phiLS(i,j) = -(-ywhole(j) + xwhole(i) + 0.55 + n1_w_dy)
                 endif
-                                
+                
+                ! ---- NEW HEAVIESIDE FCN ----
+                ! finding the new heavieside function at each node
+                w_H(i,j) = LSHEAVY(Nx,Ny,i,j,deltaX,deltaY,w_phiLS)                                
                                                 
               enddo
             enddo        
+
+            do i=2,Nx+1
+              do j=2,Ny
+                        
+                ! density at the half node
+                rho_O = 0.5*(rho_one*H(i,j+1) + rho_two*(1.0-H(i,j+1))) + &
+                        0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))
+
+
+                if (0.5*(w_H(i,j)+w_H(i,j+1)) > 0) then
+                                        
+                  ! density at the whole node
+                  !rho_O = rho_one*H(i,j) + rho_two*(1.0-H(i,j))                        
+                  !if (s_phiLS(i,j) >= 0) then
+                                        
+                  u_plus = 0.5*(u(i,j) + abs(u(i,j)))
+                  u_minus = 0.5*(u(i,j) - abs(u(i,j)))
+
+                  v_plus = 0.5*(v(i,j) + abs(v(i,j)))
+                  v_minus = 0.5*(v(i,j) - abs(v(i,j)))
+                               
+                  if (i == 2) then
+                    dvdx_minus = (v(i,j) - v(i-1,j))/deltaX
+                    dvdx_plus  = (-v(i+2,j) + 4*v(i+1,j) - 3*v(i,j))/(2*deltaX)
+                  elseif (i == Nx+1) then
+                    dvdx_minus = (3*v(i,j) - 4*v(i-1,j) + v(i-2,j))/(2*deltaX)
+                    dudx_plus  = (v(i+1,j) - v(i,j))/deltaX
+                  else
+                    dvdx_minus = (3*v(i,j) - 4*v(i-1,j) + v(i-2,j))/(2*deltaX)
+                    dvdx_plus  = (-v(i+2,j) + 4*v(i+1,j) - 3*v(i,j))/(2*deltaX)
+                  endif                                   
+
+                  if (j == 2) then
+                    dvdy_minus = (v(i,j) - v(i,j-1))/deltaY
+                    dvdy_plus  = (-v(i,j+2) + 4*v(i,j+1) - 3*v(i,j))/(2*deltaY)
+                  elseif (j == Ny) then
+                    dvdy_minus = (3*v(i,j) - 4*v(i,j-1) + v(i,j-2))/(2*deltaY)
+                    dvdy_plus  = (v(i,j+1) - v(i,j))/deltaY
+                  else
+                    dvdy_minus = (3*v(i,j) - 4*v(i,j-1) + v(i,j-2))/(2*deltaY)
+                    dvdy_plus  = (-v(i,j+2) + 4*v(i,j+1) - 3*v(i,j))/(2*deltaY)
+                  endif
+
+                  ! dummy variable for the convective opperator
+                  vstar_int = u_plus*dvdx_minus + u_minus*dvdx_plus + &
+                              v_plus*dvdy_minus + v_minus*dvdy_plus
+
+                  if ((wedge .EQV. .TRUE.) .and. (0.5*(w_H(i,j)+w_H(i,j+1)) > 0)) then                                      
+                   
+                     n1_w_inert = n1_w_inert + &
+                                     0.5*(w_H(i,j)+w_H(i,j+1))*&
+                                     rho_O/DeltaT*(v(i,j) - v_old(i,j))*&
+                                     deltaX*deltaY
+                                                                                        
+                     n1_w_conv = n1_w_conv + &
+                                    0.5*(w_H(i,j)+w_H(i,j+1))*&
+                                    rho_O*vstar_int*deltaX*deltaY
+                                
+                     n1_w_grav = n1_w_grav + 0.5*&
+                                    (w_H(i,j)+w_H(i,j+1))*rho_O*deltaX*deltaY*gy
+
+                  endif                                
+                endif
+              enddo
+            enddo
+
+            wedge_force = n_w_inert + n_w_conv + n_w_grav
+            wedge_work = wedge_work - (wedge_force * n1_w_vy * deltaT)
+            
+            if (time < 2) then
+                n1_w_vy = -2*pi*0.2*sin(2*pi*time)
+            else
+                n1_w_vy = 0      
+            endif
+
+          endif
+          
+          ! Fluid Energy Contribution
+          if (rigidbody .EQV. .FALSE.) then
+            
+            total_energy = 0.0
+            lin_momx = 0.0
+            lin_momy = 0.0
+
+            do i=2,Nx+1
+              do j=2,Ny+1
+  
+                if (i < Nx+1) then
+                  rho_O = 0.5*(rho_one*H(i+1,j) + rho_two*(1.0-H(i+1,j)))+&
+                          0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))
+                                                 
+                  total_energy = total_energy + 0.5*rho_O*(u(i,j)**2)*deltaX*deltaY  ! kinetic (in x)
+                  lin_momx = lin_momx + rho_O*u(i,j)*deltaX*deltaY
+                endif
+              
+                if (j < Ny+1) then
+                  rho_O = 0.5*(rho_one*H(i,j+1) + rho_two*(1.0-H(i,j+1)))+&
+                          0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))                          
+
+                  total_energy = total_energy + 0.5*rho_O*(v(i,j)**2)*deltaX*deltaY  ! kinetic (in y)
+                  lin_momy = lin_momy + rho_O*v(i,j)*deltaX*deltaY
+                endif
+ 
+                if ((i < Nx+1) .AND. (j < Ny+1)) then 
+                  rho_O = rho_one*H(i,j) + rho_two*(1.0-H(i,j))
+
+                  total_energy = total_energy + &                        ! Pressure and gravitational potential
+                                 ( -P(i,j) + rho_O*gy*(j-1)*deltaY ) * &
+                                 deltaX*deltaY
+                endif
+
+              enddo
+            enddo
           endif
 
+          ! /////////// RIGID BODY DYNAMICS - UPDATED VELOCITY \\\\\\\\\\\\\\\
+                   
           ! Reconstruct the level set
           if (rigidbody .EQV. .TRUE.) then
 
@@ -2099,6 +2711,8 @@ PROGRAM MPXLIB
 
             th_change = th_domain + 2.0*pi*th_counter
             th_old = th_domain
+            
+            ! Level sets
 
             if (rb_shape == 1) then                                
               do i=1,Nx+2
@@ -2298,30 +2912,26 @@ PROGRAM MPXLIB
                 s_H(i,j) = LSHEAVY(Nx,Ny,i,j,deltaX,deltaY,s_phiLS)
               enddo
             enddo
-                        
-            ! ---- NEW HEAVIESIDE FCN ----
-            ! finding the new heavieside function at each node
-            if (wedge .EQV. .TRUE.) then
-              do i=1,Nx+2
-                do j=1,Ny+2
-                  w_H(i,j) = LSHEAVY(Nx,Ny,i,j,deltaX,deltaY,w_phiLS)
-                enddo
-              enddo
-            endif
                 
             ! Recalculate the forces with the new displacement
       
             ! Collect some integrals
-                
+            
+            total_energy = 0.0
+            lin_momx = 0.0
+            lin_momy = 0.0
+
             do i=2,Nx
               do j=2,Ny+1
                         
                 ! density at the half node
                 rho_O = 0.5*(rho_one*H(i+1,j) + rho_two*(1.0-H(i+1,j))) + &
                         0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))
-                                                
-                                                
-                if (0.5*(s_H(i,j)+s_H(i+1,j)) > 0) then
+
+                total_energy = total_energy + 0.5*rho_O*(u(i,j)**2)*deltaX*deltaY  ! kinetic (in x)                                
+                lin_momx = lin_momx + rho_O*u(i,j)*deltaX*deltaY               
+                 
+                if (0.5*(s_H(i,j)+s_H(i+1,j)) > 0)  then
                         
                                         
                   u_plus = 0.5*(u(i,j) + abs(u(i,j)))
@@ -2352,7 +2962,7 @@ PROGRAM MPXLIB
                     dudy_plus  = (-u(i,j+2) + 4*u(i,j+1) - 3*u(i,j))/(2*deltaY)
                   endif
  
-                  ! dummy variable for the convective opperator
+                  ! dummy variable for the convective operator
                   ustar_int = u_plus*dudx_minus + u_minus*dudx_plus + &
                               v_plus*dudy_minus + v_minus*dudy_plus
 
@@ -2373,7 +2983,7 @@ PROGRAM MPXLIB
                                                 
                   ! Rotations
                   ! rs is the s-distance from the location at i,j to the centroid of the object.
-                  ry = ywhole(j) - ncgy
+                  ry = ywhole(j) - netcgy
                                                 
                   r1_int_inert = r1_int_inert - &
                                  ry*0.5*(s_H(i,j)+s_H(i+1,j))*&
@@ -2400,7 +3010,10 @@ PROGRAM MPXLIB
                 rho_O = 0.5*(rho_one*H(i,j+1) + rho_two*(1.0-H(i,j+1))) + &
                         0.5*(rho_one*H(i,j) + rho_two*(1.0-H(i,j)))
                                                 
-                if (0.5*(s_H(i,j)+s_H(i,j+1)) > 0) then
+                total_energy = total_energy + 0.5*rho_O*(v(i,j)**2)*deltaX*deltaY ! kinetic (in y)
+                lin_momy = lin_momy + rho_O*v(i,j)*deltaX*deltaY
+
+                if (0.5*(s_H(i,j)+s_H(i,j+1)) > 0)then
                                         
                   ! density at the whole node
                   !rho_O = rho_one*H(i,j) + rho_two*(1.0-H(i,j))                        
@@ -2436,10 +3049,8 @@ PROGRAM MPXLIB
 
                   ! dummy variable for the convective opperator
                   vstar_int = u_plus*dvdx_minus + u_minus*dvdx_plus + &
-                              v_plus*dvdy_minus + v_minus*dvdy_plus
+                              v_plus*dvdy_minus + v_minus*dvdy_plus           
 
-                                        
-                                                        
                   n1_yint_inert = n1_yint_inert + &
                                   0.5*(s_H(i,j)+s_H(i,j+1))*&
                                   rho_O/DeltaT*(v(i,j) - v_old(i,j))*&
@@ -2454,13 +3065,13 @@ PROGRAM MPXLIB
                                                 
                   ! Rotations
                   ! rs is the s-distance from the location at i,j to the centroid of the object.
-                  rx = xwhole(i) - ncgx
+                  rx = xwhole(i) - netcgx
                                                 
                   r1_int_inert = r1_int_inert + &
                                  rx*0.5*(s_H(i,j)+s_H(i,j+1))*&
                                  rho_O/deltaT*(v(i,j) - v_old(i,j))*&
                                  deltaX*deltaY
-                                                                                        
+                                                                                           
                   r1_int_conv = r1_int_conv + &
                                 rx*0.5*(s_H(i,j)+s_H(i,j+1))*&
                                 rho_O*vstar_int*deltaX*deltaY
@@ -2468,11 +3079,25 @@ PROGRAM MPXLIB
                   r1_int_grav = r1_int_grav + &
                                 rx*0.5*(s_H(i,j)+s_H(i,j+1))*&
                                 rho_O*deltaX*deltaY*gy
-                                
+                                            
                 endif
               enddo
             enddo
                 
+            ! Pressure and gravitational contributions to total energy
+            do i=2,Nx
+              do j=2,Ny     
+              
+                ! density at the whole node
+                rho_O = rho_one*H(i,j) + rho_two*(1.0-H(i,j))
+
+                total_energy = total_energy + &
+                               ( -P(i,j) + rho_O*gy*(j-1)*deltaY ) * &
+                               deltaX*deltaY
+
+              enddo
+            enddo
+
             ! Upddate the convective angular velocity
             n1_rb_vom = n_rb_vom + 0.5*deltaT/big_J*&
                                    (r_int_inert + r_int_conv + r_int_grav) &
@@ -2490,26 +3115,139 @@ PROGRAM MPXLIB
               int_data(3) = ncgy
               int_data(4) = small_theta_n
 
+              ! Acceleration
+              n1_rb2_aom = -int_torque/small_J
+
+              ! Update velocity
+              n1_rb2_vom = n12_rb2_vom + 0.5*deltaT*n1_rb2_aom
+           
+              ! Energy update
+              int_work = int_work + c12*(delta_vom**2)*deltaT
+              total_energy = total_energy + &
+                             0.5*small_J*(n1_rb2_vom**2) + &
+                             0.5*k12*(delta_theta**2)
+
+            elseif (int_type == 2) then
+
+              ! Coordinate Transformation
+              delta_vpx =  cos(th)*(n12_rb2_vx - n12_rb_vx) + sin(th)*(n12_rb2_vy - n12_rb_vy)
+              delta_vpy = -sin(th)*(n12_rb2_vx - n12_rb_vx) + cos(th)*(n12_rb2_vy - n12_rb_vy)
+
+              delta_dpx =  cos(th)*(n1_rb2_dx - n1_rb_dx) + sin(th)*(n1_rb2_dy - n1_rb_dy)
+              delta_dpy = -sin(th)*(n1_rb2_dx - n1_rb_dx) + cos(th)*(n1_rb2_dy - n1_rb_dy)
+
+              if ((delta_dpx >= 0.8*max_e) .or. (delta_dpx <= 0.8*max_w)) then
+                      kx_adj = 100*kx12
+              else
+                      kx_adj = (.64*kx12*max_e*max_w) / ((delta_dpx - 0.8*max_e)*(delta_dpx - 0.8*max_w))
+              endif
+
+              if ((delta_dpy >= 0.8*max_n) .or. (delta_dpy <= 0.8*max_s)) then
+                      ky_adj = 100*ky12
+              else
+                      ky_adj = (.64*ky12*max_n*max_s) / ((delta_dpy - 0.8*max_n)*(delta_dpy - 0.8*max_s))
+              endif
+
+              int_forcepx = kx_adj*delta_dpx + cx12*delta_vpx
+              int_forcepy = ky_adj*delta_dpy + cy12*delta_vpy
+
+              ! Inverse transform
+              int_forcex = cos(th)*int_forcepx - sin(th)*int_forcepy
+              int_forcey = sin(th)*int_forcepx + cos(th)*int_forcepy
+
+              ! Acceleration
+              n1_rb2_ax = - int_forcex/slider_mass
+              n1_rb2_ay = - int_forcey/slider_mass - gy
+             
+              ! Update velocity
+              n1_rb2_vx = n12_rb2_vx + 0.5*deltaT*n1_rb2_ax                
+              n1_rb2_vy = n12_rb2_vy + 0.5*deltaT*n1_rb2_ay
+
+              ! Energy
+              int_work = int_work + deltaT * (cx12*(delta_vpx**2) + cy12*(delta_vpy**2))
+              total_energy = total_energy + &
+                             0.5*slider_mass*((n12_rb2_vx**2) + (n12_rb2_vy**2)) + &
+                             0.5*kx12*(delta_dpx**2) + &
+                             0.5*ky12*(delta_dpy**2)
+              lin_momx = lin_momx + slider_mass*n12_rb2_vx
+              lin_momy = lin_momy + slider_mass*n12_rb2_vy
+
+            elseif (int_type == 3) then
+             
+              ! Coordinate Transformation
+              ! delta_vpy = -sin(th)*(n1_rb2_vx - n1_rb_vx) + cos(th)*(n1_rb2_vy - n1_rb_vy)
+              ! delta_dpy = -sin(th)*(n1_rb2_dx - n1_rb_dx) + cos(th)*(n1_rb2_dy - n1_rb_dy)
+
+              if ((delta_dpy >= max_n) .or. (delta_dpy <= max_s)) then
+                      ky_adj = 10000
+              else
+                      ky_adj = (ky12*max_n*max_s) / ((delta_dpy - max_n)*(delta_dpy - max_s))
+              endif
+ 
+              !!!!!!!!!!! rb_dpmove = cos(th)*(n1_rb_dx-n_rb_dx) + sin(th)*(n1_rb_dy-n_rb_dy)
+              !!!!!!!!!!! rb_vpmove = cos(th)*(n1_rb_dx-n_rb_dx) + sin(th)*(n1_rb_dy-n_rb_dy)
+
+              int_forcepy = ky12*delta_dpy + cy12*delta_vpy + cos(th)*slider_mass*gy
+              
+              ! External Forces
+              ext_px =  cos(th)*(n1_xint_inert + n1_xint_conv + n1_xint_grav) + &
+                        sin(th)*(n1_yint_inert + n1_yint_conv + n1_yint_grav + sin(th)*slider_mass*gy)
+              ext_py = -sin(th)*(n1_xint_inert + n1_xint_conv + n1_xint_grav) + &
+                        cos(th)*(n1_yint_inert + n1_yint_conv + n1_yint_grav + sin(th)*slider_mass*gy)
+
+              ! Inverse Transformation
+              int_forcex = - sin(th)*int_forcepy
+              int_forcey =   cos(th)*int_forcepy
+     
+              ! Buoy Acceleration
+              n1_rb_ax = cos(th)*(ext_px/(rb1_mass+slider_mass)) - sin(th)*(ext_py/rb1_mass) + &
+                        int_forcex/rb1_mass - gx
+              n1_rb_ay = sin(th)*(ext_px/(rb1_mass+slider_mass)) + cos(th)*(ext_py/rb1_mass) + &
+                        int_forcey/rb1_mass - gy
+              n1_rb_aom = 2/deltaT*(n1_rb_vom - n_rb_vom) - n_rb_aom + ((int_torque - n1_rb_vom*diff_J)/big_J)
+
+              ! Internal Acceleration
+              ! n1_rb2_ax = - int_forcex/slider_mass
+              n1_rb2_ay = - int_forcepy/slider_mass
+
+              ! Update velocity
+              ! n1_rb2_vx = n12_rb2_vx + 0.5*deltaT*n1_rb2_ax                
+              ! n1_rb2_vy = n12_rb2_vy + 0.5*deltaT*n1_rb2_ay
+              delta_vpy = delta_vpy + 0.5*deltaT*n1_rb2_ay
+
+              ! Energy
+              int_work = int_work + deltaT * (cx12*(delta_vpx**2) + cy12*(delta_vpy**2))
+              total_energy = total_energy + &
+                             0.5*slider_mass*((n12_rb2_vx**2) + (n12_rb2_vy**2)) + &
+                             0.5*kx12*(delta_dpx**2) + &
+                             0.5*ky12*(delta_dpy**2)
+
             endif
 
-            ! Compute updated acceleration
-                
-            n1_rb_ax = (n1_xint_inert + n1_xint_conv + n1_xint_grav - gx*rb_mass)/rb_mass
-            n1_rb_ay = (n1_yint_inert + n1_yint_conv + n1_yint_grav - gy*rb_mass)/rb_mass
-                
-            n1_rb_aom = 2/deltaT*(n1_rb_vom - n_rb_vom) - n_rb_aom + (int_torque/big_J)
-            n1_rb2_aom = -int_torque/small_J
-                                
-            ! Calculate final velocity
-                
+            ! Compute updated acceleration ::                
+            if (int_type /= 3) then
+            n1_rb_ax = (n1_xint_inert + n1_xint_conv + n1_xint_grav - gx*rb_mass + int_forcex)/rb_mass
+            n1_rb_ay = (n1_yint_inert + n1_yint_conv + n1_yint_grav - gy*rb_mass + int_forcey)/rb_mass
+            n1_rb_aom = 2/deltaT*(n1_rb_vom - n_rb_vom) - n_rb_aom + ((int_torque - n1_rb_vom*diff_J)/big_J)
+            endif
+
+            ! Restrict motion
+            if (RB_lock == 1) then
+              n1_rb_ax = 0.0
+              n1_rb_aom = 0.0      
+            endif 
+
+            ! Calculate final velocity ::         
             n1_rb_vx = n12_rb_vx + 0.5*deltaT*n1_rb_ax                
             n1_rb_vy = n12_rb_vy + 0.5*deltaT*n1_rb_ay
-            n1_rb2_vom = n12_rb2_vom + 0.5*deltaT*n1_rb2_aom
-            
-            ! Wedge
-            if (wedge .EQV. .TRUE.) then
-              n1_w_vy = -2*pi*0.2*sin(2*pi*time)      
-            endif
+
+            ! Calculate Energy ::
+            total_energy = total_energy + &
+                         rb_mass*gy*ncgy + &
+                         0.5*rb_mass*((n1_rb_vx**2)+(n1_rb_vy**2)) + &
+                         0.5*big_J*(n1_rb_vom**2)
+            lin_momx = lin_momx + rb_mass*n1_rb_vx
+            lin_momy = lin_momy + rb_mass*n1_rb_vy
 
           endif
                 
@@ -2536,7 +3274,7 @@ PROGRAM MPXLIB
              endif
              
              if (aom_counter > 15) then
-                stability  = 0.7*stability
+                stability  = 0.9*stability
                 aom_limit = aom_limit + 10.0
                 aom_counter = 0
              endif
@@ -2558,7 +3296,11 @@ PROGRAM MPXLIB
           r_int_conv  = r1_int_conv
           r_int_grav  = r1_int_grav
           r_int_inert = r1_int_inert
-                
+          
+          n_w_conv  = n1_w_conv
+          n_w_grav  = n1_w_grav
+          n_w_inert = n1_w_inert
+                      
           ! Reinitialize intergral variables two different directions
                 
           n1_xint_conv  = 0.0
@@ -2572,6 +3314,10 @@ PROGRAM MPXLIB
           r1_int_conv  = 0.0
           r1_int_grav  = 0.0
           r1_int_inert = 0.0
+
+          n1_w_conv  = 0.0
+          n1_w_grav  = 0.0
+          n1_w_inert = 0.0
 
           n_w_dy = n1_w_dy
                 
@@ -2596,10 +3342,18 @@ PROGRAM MPXLIB
           n_rb2_aom = n1_rb2_aom
 
           small_theta_n = small_theta_n1
+
+          n_rb2_dx = n1_rb2_dx
+          n_rb2_dy = n1_rb2_dy
+        
+          n_rb2_vx = n1_rb2_vx
+          n_rb2_vy = n1_rb2_vy
+
+          n_rb2_ax = n1_rb2_ax
+          n_rb2_ay = n1_rb2_ay
                
           time = time + deltaT  ! increment the time to n+1
           time_count = time_count + deltaT  ! increment the print clock
-                
 
           !---- SAVING DATA ----
           !if (time>=time_max .or. time_count>=time_print) then
@@ -2637,7 +3391,7 @@ PROGRAM MPXLIB
         70  FORMAT (16X, E10.4)
         80  FORMAT (16X, L)
         
-        90        FORMAT (9F15.4)  !9F10.4
+        90  FORMAT (10F13.6)  !9F10.4
         95  FORMAT (2I5)
 
 END PROGRAM MPXLIB
@@ -2681,25 +3435,25 @@ SUBROUTINE ENODIFF(Nx,Ny,i,j,deltaX,deltaY,u,v,VAR,DiffX,DiffY)
         Dnegy = (VAR(i,j) - VAR(i,j-1))/deltaY ! Back diff at j
         Dposy = (VAR(i,j+1) - VAR(i,j))/deltaY ! Forward diff at j
 
-        IF ((i==2 .OR. i==Nx+1) .OR. (j==2 .OR. j==Ny+1)) THEN
+        !IF ((i==2 .OR. i==Nx+1) .OR. (j==2 .OR. j==Ny+1)) THEN
                 ! near edges I use 1st order differences
                 DiffLeft = Dnegx
                 DiffRight = Dposx
                 DiffBottom = Dnegy
                 DiffTop = Dposy
-        ELSE
-                Dnegnegx = (VAR(i-2,j) - 2.0*VAR(i-1,j) + VAR(i,j))/deltaX**2.0  ! Central 2diff at i-1
-                Dposnegx = (VAR(i-1,j) - 2.0*VAR(i,j) + VAR(i+1,j))/deltaX**2.0  ! Central 2diff at i
-                Dposposx = (VAR(i,j) - 2.0*VAR(i+1,j) + VAR(i+2,j))/deltaX**2.0  ! Central 2diff at i+1
-                Dnegnegy = (VAR(i,j-2) - 2.0*VAR(i,j-1) + VAR(i,j))/deltaY**2.0  ! Central 2diff at j-1
-                Dposnegy = (VAR(i,j-1) - 2.0*VAR(i,j) + VAR(i,j+1))/deltaY**2.0  ! Central 2diff at j
-                Dposposy = (VAR(i,j) - 2.0*VAR(i,j+1) + VAR(i,j+2))/deltaY**2.0  ! Central 2diff at j+1        
+        !ELSE
+        !        Dnegnegx = (VAR(i-2,j) - 2.0*VAR(i-1,j) + VAR(i,j))/deltaX**2.0  ! Central 2diff at i-1
+        !        Dposnegx = (VAR(i-1,j) - 2.0*VAR(i,j) + VAR(i+1,j))/deltaX**2.0  ! Central 2diff at i
+        !        Dposposx = (VAR(i,j) - 2.0*VAR(i+1,j) + VAR(i+2,j))/deltaX**2.0  ! Central 2diff at i+1
+        !        Dnegnegy = (VAR(i,j-2) - 2.0*VAR(i,j-1) + VAR(i,j))/deltaY**2.0  ! Central 2diff at j-1
+        !        Dposnegy = (VAR(i,j-1) - 2.0*VAR(i,j) + VAR(i,j+1))/deltaY**2.0  ! Central 2diff at j
+        !        Dposposy = (VAR(i,j) - 2.0*VAR(i,j+1) + VAR(i,j+2))/deltaY**2.0  ! Central 2diff at j+1        
 
-                DiffLeft = Dnegx + deltaX/2.0*MFCN(Dposnegx, Dnegnegx)    ! Diff on left face
-                DiffRight = Dposx - deltaX/2.0*MFCN(Dposnegx, Dposposx)   ! Diff on right face
-                DiffBottom = Dnegy + deltaY/2.0*MFCN(Dposnegy, Dnegnegy)  ! Diff on bottom face
-                DiffTop = Dposy - deltaY/2.0*MFCN(Dposnegy, Dposposy)     ! Diff on top face
-        ENDIF
+        !        DiffLeft = Dnegx + deltaX/2.0*MFCN(Dposnegx, Dnegnegx)    ! Diff on left face
+        !        DiffRight = Dposx - deltaX/2.0*MFCN(Dposnegx, Dposposx)   ! Diff on right face
+        !        DiffBottom = Dnegy + deltaY/2.0*MFCN(Dposnegy, Dnegnegy)  ! Diff on bottom face
+        !        DiffTop = Dposy - deltaY/2.0*MFCN(Dposnegy, Dposposy)     ! Diff on top face
+        !ENDIF
 
         IF (0.5*(u(i,j)+u(i-1,j)) > 0.0) THEN
                 DiffX = DiffLeft
@@ -2729,7 +3483,7 @@ REAL(kind=8) FUNCTION MFCN(a,b)
         IMPLICIT NONE
         REAL(kind=8), INTENT(IN) :: a,b
 
-        IF (a*b > 0.0) THEN
+        IF (a*b >= 0.0) THEN
                 IF (ABS(a) <= ABS(b)) THEN
                         MFCN = a;
                 ELSEIF (ABS(a) > ABS(b)) THEN
