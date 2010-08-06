@@ -16,16 +16,16 @@ This is a data file, do not change format
 !
 !
 !** TIME **
-   time_print = 0.05
-     time_max = 10.0
+   time_print = 0.1
+     time_max = 200.0
     stability = 0.2
 !
 !
 !** INTERFACE **
-   trackphase = T
+   trackphase = T
    immersedbc = F
    rigidbody  = T
-        wedge = T                                                                                            
+        wedge = T                                                                                           
 !
 !
 !** PROPERTIES ** 
@@ -33,8 +33,9 @@ This is a data file, do not change format
 ! material_two => phi<0 and H=0
      rb_shape = 3
      int_type = 1
-      rb1_mass = 10.0
-        big_J = 0.0417
+      RB_lock = 0
+     rb1_mass = 35.0
+       buoy_J = 0.5
       rho_one = 1000.0
       rho_two = 1.0
        mu_one = 0.001
@@ -49,8 +50,8 @@ This is a data file, do not change format
 		      (3) free surface, (4) pressure, (5) flow, (6) contact line
       BCnorth =          1
       BCsouth =          1
-       BCeast =          2
-       BCwest =          2
+       BCeast =          1
+       BCwest =          1
 !
 !** BOUNDARY CONDITIONS **
 ! velocity boundary conditions [applicable for BC types (1) and (4)]
@@ -111,22 +112,31 @@ This is a data file, do not change format
 ! s_phiLS =
          c_xo = 2.5
          c_yo = 0.45 
-           x1 = 2.55
-           y1 = 0.55
-           x2 = 2.45
-           y2 = 0.55
-           x3 = 2.45
-           y3 = 0.35
-           x4 = 2.55
-           y4 = 0.35
+           x1 = 2.6
+           y1 = 0.65
+           x2 = 2.4
+           y2 = 0.65
+           x3 = 2.4
+           y3 = 0.25
+           x4 = 2.6
+           y4 = 0.25
           tho = 0.0
           cgx = 2.5
-          cgy = 0.45
+          cgy = 0.35
 !
 !
 !** TORSIONAL DISC PARAMETERS (int_type = 1) **^M
-     rb2_mass = 5.0 
-      small_J = 0.0250
-          k12 = 1.0
+     rb2_mass = 15.0 
+      small_J = 0.10
+          k12 = 0.5
           c12 = 1.0
+!
+!
+!** SLIDER PARAMETERS (int_type = 2 OR 3) **^M
+      rb2_mass = 5.0 
+       small_J = 0.0250
+          kx12 = 1.0
+          cx12 = 1.0
+          ky12 = 1.0
+          cy12 = 1.0
 !
