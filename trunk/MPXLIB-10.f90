@@ -294,7 +294,7 @@ PROGRAM MPXLIB
         !
         !
         ! //////////////////////////// INPUTS \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\        
-        filename = 'inputfile.txt'                                   ! The name of the input file
+        filename = 'inputfile_new.txt'                                   ! The name of the input file
         
         pi = 3.1415926535897932384626433832795
 
@@ -1920,9 +1920,9 @@ PROGRAM MPXLIB
                                                         
               if (i == 2) then
                 dudx_minus = (u(i,j) - u(i-1,j))/deltaX
-                dudx_plus  = (-u(i+2,j) + 4*u(i+1,j) - 3*u(i,j))/(2*deltaX)
+                dudx_plus  = (u(i+1,j) - u(i,j))/deltaX
               elseif (i == Nx) then
-                dudx_minus = (3*u(i,j) - 4*u(i-1,j) + u(i-2,j))/(2*deltaX)
+                dudx_minus = (u(i,j) - u(i-1,j))/deltaX
                 dudx_plus  = (u(i+1,j) - u(i,j))/deltaX
               else
                 dudx_minus = (3*u(i,j) - 4*u(i-1,j) + u(i-2,j))/(2*deltaX)
@@ -1931,9 +1931,9 @@ PROGRAM MPXLIB
 
               if (j == 2) then
                 dudy_minus = (u(i,j) - u(i,j-1))/deltaY
-                dudy_plus  = (-u(i,j+2) + 4*u(i,j+1) - 3*u(i,j))/(2*deltaY)
+                dudy_plus  = (u(i,j+1) - u(i,j))/deltaY
               elseif (j == Ny+1) then
-                dudy_minus = (3*u(i,j) - 4*u(i,j-1) + u(i,j-2))/(2*deltaY)
+                dudy_minus = (u(i,j) - u(i,j-1))/deltaY
                 dudy_plus  = (u(i,j+1) - u(i,j))/deltaY
               else
                 dudy_minus = (3*u(i,j) - 4*u(i,j-1) + u(i,j-2))/(2*deltaY)
@@ -1962,10 +1962,10 @@ PROGRAM MPXLIB
                                
               if (i == 2) then
                 dvdx_minus = (v(i,j) - v(i-1,j))/deltaX
-                dvdx_plus  = (-v(i+2,j) + 4*v(i+1,j) - 3*v(i,j))/(2*deltaX)
+                dvdx_plus  = (v(i+1,j) - v(i,j))/deltaX
               elseif (i == Nx+1) then
-                dvdx_minus = (3*v(i,j) - 4*v(i-1,j) + v(i-2,j))/(2*deltaX)
-                dudx_plus  = (v(i+1,j) - v(i,j))/deltaX
+                dvdx_minus = (v(i,j) - v(i-1,j))/deltaX
+                dvdx_plus  = (v(i+1,j) - v(i,j))/deltaX
               else
                 dvdx_minus = (3*v(i,j) - 4*v(i-1,j) + v(i-2,j))/(2*deltaX)
                 dvdx_plus  = (-v(i+2,j) + 4*v(i+1,j) - 3*v(i,j))/(2*deltaX)
@@ -1973,9 +1973,9 @@ PROGRAM MPXLIB
 
               if (j == 2) then
                 dvdy_minus = (v(i,j) - v(i,j-1))/deltaY
-                dvdy_plus  = (-v(i,j+2) + 4*v(i,j+1) - 3*v(i,j))/(2*deltaY)
+                dvdy_plus  = (v(i,j+1) - v(i,j))/deltaY
               elseif (j == Ny) then
-                dvdy_minus = (3*v(i,j) - 4*v(i,j-1) + v(i,j-2))/(2*deltaY)
+                dvdy_minus = (v(i,j) - v(i,j-1))/deltaY
                 dvdy_plus  = (v(i,j+1) - v(i,j))/deltaY
               else
                 dvdy_minus = (3*v(i,j) - 4*v(i,j-1) + v(i,j-2))/(2*deltaY)
@@ -2486,7 +2486,7 @@ PROGRAM MPXLIB
                     !CALL ENODIFF(Nx,Ny,i,j,deltaX,deltaY,u,v,phiLS,DiffX,DiffY)
                                                         
                     ! use WENO on interior (up to 5th order accurate)
-                    CALL ENODIFF(Nx,Ny,i,j,deltaX,deltaY,u,v,phiLS,DiffX,DiffY)
+                    CALL WENODIFF(Nx,Ny,i,j,deltaX,deltaY,u,v,phiLS,DiffX,DiffY)
                   endif
                                                 
                                                 
@@ -2521,8 +2521,8 @@ PROGRAM MPXLIB
                                 
             !---- REINITIALIZATION ----
             ! reinitialize the new LS field to a signed distance function
-            CALL LSREIN(Nx,Ny,deltaX,deltaY,phiLS,H,&
-                        BCphisouth,BCphinorth,BCphiwest,BCphieast,ywhole,d_phiLS)
+            !CALL LSREIN(Nx,Ny,deltaX,deltaY,phiLS,H,&
+            !            BCphisouth,BCphinorth,BCphiwest,BCphieast,ywhole,d_phiLS)
                         
             !---------------------END OF STANDARD LSM---------------------
 
@@ -2597,10 +2597,10 @@ PROGRAM MPXLIB
                                
                   if (i == 2) then
                     dvdx_minus = (v(i,j) - v(i-1,j))/deltaX
-                    dvdx_plus  = (-v(i+2,j) + 4*v(i+1,j) - 3*v(i,j))/(2*deltaX)
+                    dvdx_plus  = (v(i+1,j) - v(i,j))/deltaX
                   elseif (i == Nx+1) then
-                    dvdx_minus = (3*v(i,j) - 4*v(i-1,j) + v(i-2,j))/(2*deltaX)
-                    dudx_plus  = (v(i+1,j) - v(i,j))/deltaX
+                    dvdx_minus = (v(i,j) - v(i-1,j))/deltaX
+                    dvdx_plus  = (v(i+1,j) - v(i,j))/deltaX
                   else
                     dvdx_minus = (3*v(i,j) - 4*v(i-1,j) + v(i-2,j))/(2*deltaX)
                     dvdx_plus  = (-v(i+2,j) + 4*v(i+1,j) - 3*v(i,j))/(2*deltaX)
@@ -2608,9 +2608,9 @@ PROGRAM MPXLIB
 
                   if (j == 2) then
                     dvdy_minus = (v(i,j) - v(i,j-1))/deltaY
-                    dvdy_plus  = (-v(i,j+2) + 4*v(i,j+1) - 3*v(i,j))/(2*deltaY)
+                    dvdy_plus  = (v(i,j+1) - v(i,j))/deltaY
                   elseif (j == Ny) then
-                    dvdy_minus = (3*v(i,j) - 4*v(i,j-1) + v(i,j-2))/(2*deltaY)
+                    dvdy_minus = (v(i,j) - v(i,j-1))/deltaY
                     dvdy_plus  = (v(i,j+1) - v(i,j))/deltaY
                   else
                     dvdy_minus = (3*v(i,j) - 4*v(i,j-1) + v(i,j-2))/(2*deltaY)
@@ -2942,9 +2942,9 @@ PROGRAM MPXLIB
                                                         
                   if (i == 2) then
                     dudx_minus = (u(i,j) - u(i-1,j))/deltaX
-                    dudx_plus  = (-u(i+2,j) + 4*u(i+1,j) - 3*u(i,j))/(2*deltaX)
+                    dudx_plus  = (u(i+1,j) - u(i,j))/deltaX
                   elseif (i == Nx) then
-                    dudx_minus = (3*u(i,j) - 4*u(i-1,j) + u(i-2,j))/(2*deltaX)
+                    dudx_minus = (u(i,j) - u(i-1,j))/deltaX
                     dudx_plus  = (u(i+1,j) - u(i,j))/deltaX
                   else
                     dudx_minus = (3*u(i,j) - 4*u(i-1,j) + u(i-2,j))/(2*deltaX)
@@ -2953,9 +2953,9 @@ PROGRAM MPXLIB
 
                   if (j == 2) then
                     dudy_minus = (u(i,j) - u(i,j-1))/deltaY
-                    dudy_plus  = (-u(i,j+2) + 4*u(i,j+1) - 3*u(i,j))/(2*deltaY)
+                    dudy_plus  = (u(i,j+1) - u(i,j))/deltaY
                   elseif (j == Ny+1) then
-                    dudy_minus = (3*u(i,j) - 4*u(i,j-1) + u(i,j-2))/(2*deltaY)
+                    dudy_minus = (u(i,j) - u(i,j-1))/deltaY
                     dudy_plus  = (u(i,j+1) - u(i,j))/deltaY
                   else
                     dudy_minus = (3*u(i,j) - 4*u(i,j-1) + u(i,j-2))/(2*deltaY)
@@ -3027,10 +3027,10 @@ PROGRAM MPXLIB
                                
                   if (i == 2) then
                     dvdx_minus = (v(i,j) - v(i-1,j))/deltaX
-                    dvdx_plus  = (-v(i+2,j) + 4*v(i+1,j) - 3*v(i,j))/(2*deltaX)
+                    dvdx_plus  = (v(i+1,j) - v(i,j))/deltaX
                   elseif (i == Nx+1) then
-                    dvdx_minus = (3*v(i,j) - 4*v(i-1,j) + v(i-2,j))/(2*deltaX)
-                    dudx_plus  = (v(i+1,j) - v(i,j))/deltaX
+                    dvdx_minus = (v(i,j) - v(i-1,j))/deltaX
+                    dvdx_plus  = (v(i+1,j) - v(i,j))/deltaX
                   else
                     dvdx_minus = (3*v(i,j) - 4*v(i-1,j) + v(i-2,j))/(2*deltaX)
                     dvdx_plus  = (-v(i+2,j) + 4*v(i+1,j) - 3*v(i,j))/(2*deltaX)
@@ -3038,9 +3038,9 @@ PROGRAM MPXLIB
 
                   if (j == 2) then
                     dvdy_minus = (v(i,j) - v(i,j-1))/deltaY
-                    dvdy_plus  = (-v(i,j+2) + 4*v(i,j+1) - 3*v(i,j))/(2*deltaY)
+                    dvdy_plus  = (v(i,j+1) - v(i,j))/deltaY
                   elseif (j == Ny) then
-                    dvdy_minus = (3*v(i,j) - 4*v(i,j-1) + v(i,j-2))/(2*deltaY)
+                    dvdy_minus = (v(i,j) - v(i,j-1))/deltaY
                     dvdy_plus  = (v(i,j+1) - v(i,j))/deltaY
                   else
                     dvdy_minus = (3*v(i,j) - 4*v(i,j-1) + v(i,j-2))/(2*deltaY)
@@ -3363,17 +3363,19 @@ PROGRAM MPXLIB
                         
             ! ---- APPLY BC'S ----
             ! apply advection BC's
-            call BCVELOCITY(Nx,Ny,u,v,BCnorth,BCsouth,BCeast,BCwest,&
-                            unorth,usouth,ueast,uwest,&
-                            vnorth,vsouth,veast,vwest,&
-                            deltaX,deltaY,phiLS,contC,contA,contR,contM,1)
+            !call BCVELOCITY(Nx,Ny,u,v,BCnorth,BCsouth,BCeast,BCwest,&
+            !                unorth,usouth,ueast,uwest,&
+            !                vnorth,vsouth,veast,vwest,&
+            !                deltaX,deltaY,phiLS,contC,contA,contR,contM,1)
                                                 
+            CALL LSREIN(Nx,Ny,deltaX,deltaY,phiLS,H,&
+                        BCphisouth,BCphinorth,BCphiwest,BCphieast,ywhole,d_phiLS)
             ! apply level set BC's prior to saving
             !call BCLEVELSET(Nx,Ny,phiLS,2,2,1,1)
-            CALL BCLEVELSET(Nx,Ny,deltaX,deltay,ywhole,phiLS,&
-                            BCphisouth,BCphinorth,BCphiwest,BCphieast,d_phiLS)
-            CALL BCLEVELSET(Nx,Ny,deltaX,deltay,ywhole,s_phiLS,&
-                            BCphisouth,BCphinorth,BCphiwest,BCphieast,d_phiLS)
+            !CALL BCLEVELSET(Nx,Ny,deltaX,deltay,ywhole,phiLS,&
+            !                BCphisouth,BCphinorth,BCphiwest,BCphieast,d_phiLS)
+            !CALL BCLEVELSET(Nx,Ny,deltaX,deltay,ywhole,s_phiLS,&
+            !                BCphisouth,BCphinorth,BCphiwest,BCphieast,d_phiLS)
                                                         
             call SAVEDATA(Nx,Ny,Lx,Ly,time,x,y,phiLS,s_phiLS,w_phiLS,H,s_H,w_H,P,u,v,file_count,int_data)
 
@@ -3435,25 +3437,25 @@ SUBROUTINE ENODIFF(Nx,Ny,i,j,deltaX,deltaY,u,v,VAR,DiffX,DiffY)
         Dnegy = (VAR(i,j) - VAR(i,j-1))/deltaY ! Back diff at j
         Dposy = (VAR(i,j+1) - VAR(i,j))/deltaY ! Forward diff at j
 
-        !IF ((i==2 .OR. i==Nx+1) .OR. (j==2 .OR. j==Ny+1)) THEN
+        IF ((i==2 .OR. i==Nx+1) .OR. (j==2 .OR. j==Ny+1)) THEN
                 ! near edges I use 1st order differences
                 DiffLeft = Dnegx
                 DiffRight = Dposx
                 DiffBottom = Dnegy
                 DiffTop = Dposy
-        !ELSE
-        !        Dnegnegx = (VAR(i-2,j) - 2.0*VAR(i-1,j) + VAR(i,j))/deltaX**2.0  ! Central 2diff at i-1
-        !        Dposnegx = (VAR(i-1,j) - 2.0*VAR(i,j) + VAR(i+1,j))/deltaX**2.0  ! Central 2diff at i
-        !        Dposposx = (VAR(i,j) - 2.0*VAR(i+1,j) + VAR(i+2,j))/deltaX**2.0  ! Central 2diff at i+1
-        !        Dnegnegy = (VAR(i,j-2) - 2.0*VAR(i,j-1) + VAR(i,j))/deltaY**2.0  ! Central 2diff at j-1
-        !        Dposnegy = (VAR(i,j-1) - 2.0*VAR(i,j) + VAR(i,j+1))/deltaY**2.0  ! Central 2diff at j
-        !        Dposposy = (VAR(i,j) - 2.0*VAR(i,j+1) + VAR(i,j+2))/deltaY**2.0  ! Central 2diff at j+1        
+        ELSE
+                Dnegnegx = (VAR(i-2,j) - 2.0*VAR(i-1,j) + VAR(i,j))/deltaX**2.0  ! Central 2diff at i-1
+                Dposnegx = (VAR(i-1,j) - 2.0*VAR(i,j) + VAR(i+1,j))/deltaX**2.0  ! Central 2diff at i
+                Dposposx = (VAR(i,j) - 2.0*VAR(i+1,j) + VAR(i+2,j))/deltaX**2.0  ! Central 2diff at i+1
+                Dnegnegy = (VAR(i,j-2) - 2.0*VAR(i,j-1) + VAR(i,j))/deltaY**2.0  ! Central 2diff at j-1
+                Dposnegy = (VAR(i,j-1) - 2.0*VAR(i,j) + VAR(i,j+1))/deltaY**2.0  ! Central 2diff at j
+                Dposposy = (VAR(i,j) - 2.0*VAR(i,j+1) + VAR(i,j+2))/deltaY**2.0  ! Central 2diff at j+1        
 
-        !        DiffLeft = Dnegx + deltaX/2.0*MFCN(Dposnegx, Dnegnegx)    ! Diff on left face
-        !        DiffRight = Dposx - deltaX/2.0*MFCN(Dposnegx, Dposposx)   ! Diff on right face
-        !        DiffBottom = Dnegy + deltaY/2.0*MFCN(Dposnegy, Dnegnegy)  ! Diff on bottom face
-        !        DiffTop = Dposy - deltaY/2.0*MFCN(Dposnegy, Dposposy)     ! Diff on top face
-        !ENDIF
+                DiffLeft = Dnegx + deltaX/2.0*MFCN(Dposnegx, Dnegnegx)    ! Diff on left face
+                DiffRight = Dposx - deltaX/2.0*MFCN(Dposnegx, Dposposx)   ! Diff on right face
+                DiffBottom = Dnegy + deltaY/2.0*MFCN(Dposnegy, Dnegnegy)  ! Diff on bottom face
+                DiffTop = Dposy - deltaY/2.0*MFCN(Dposnegy, Dposposy)     ! Diff on top face
+        ENDIF
 
         IF (0.5*(u(i,j)+u(i-1,j)) > 0.0) THEN
                 DiffX = DiffLeft
