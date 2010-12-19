@@ -9,7 +9,7 @@ close all
 % Open an avi file
 
 %aviobjx = avifile('x_cont_movie.avi') 
-aviobjy = avifile('ycontours_pluslevelset2.avi') 
+aviobjy = avifile('one_five_10.avi') 
 %aviobjp = avifile('intermediate.avi') 
 %aviobjpress = avifile('press.avi') 
 
@@ -23,7 +23,7 @@ totalpts = xnodes*ynodes;
 
 filenum = -1
 
-for j = 1:131
+for j = 1:250
     
     filenum = filenum +1;
     
@@ -182,6 +182,7 @@ for j = 1:131
     %aviobjp = addframe(aviobjp,hp)
     %aviobjpress = addframe(aviobjpress,hpress)
     close all
+    fclose(fid)
 end
 
 %aviobjx = close(aviobjx)

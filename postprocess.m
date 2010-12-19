@@ -6,8 +6,8 @@
 clear
 close all
 
-xnodes = 151;
-ynodes = 31;
+xnodes = 76;
+ynodes = 16;
 
 totalpts = xnodes*ynodes;
 
@@ -20,12 +20,12 @@ totalpts = xnodes*ynodes;
     
 %    fid = fopen(filestring,'r');
     
-    fid = fopen('file000.dat','r');
+    fid = fopen('file190.dat','r');
 
     line1 = fgetl(fid)
     line2 = fgetl(fid)
 
-    data = fscanf(fid,'%g',[11,totalpts]);
+    data = fscanf(fid,'%g',[12,totalpts]);
 
     X = data(1,:)';
     Y = data(2,:)';

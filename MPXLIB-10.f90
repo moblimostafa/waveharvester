@@ -897,9 +897,9 @@ PROGRAM MPXLIB
                                          e_phiLS*xwhole(i)+&
                                          f_phiLS*ywhole(j)
                                                         
-              if (ywhole(j) < (v_phiLS + 0.05)) then
-                phiLS(i,j) = -ywhole(j) + v_phiLS
-              endif
+              !if (ywhole(j) < (v_phiLS + 0.05)) then
+              !  phiLS(i,j) = -ywhole(j) + v_phiLS
+              !endif
 
             enddo
           enddo
@@ -3485,7 +3485,7 @@ REAL(kind=8) FUNCTION MFCN(a,b)
         IMPLICIT NONE
         REAL(kind=8), INTENT(IN) :: a,b
 
-        IF (a*b >= 0.0) THEN
+        IF (a*b > 0.0) THEN
                 IF (ABS(a) <= ABS(b)) THEN
                         MFCN = a;
                 ELSEIF (ABS(a) > ABS(b)) THEN
