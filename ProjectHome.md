@@ -1,0 +1,1 @@
+This model is intended to develop a capability to model energy harvesting buoy on surface waves in the ocean.  It should be extended to 3D.  It uses a two phase flow model developed by Mark Sussman for water and air, and a rigid body interaction model developed by Jessica Sanders
